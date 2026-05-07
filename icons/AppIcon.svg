@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="outer" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6d28d9"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="mid" x1="30%" y1="0%" x2="70%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#c026d3"/>
+    </linearGradient>
+    <radialGradient id="center" cx="50%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#e9d5ff"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </radialGradient>
+  </defs>
+  <!-- Outer 8-pointed star (square rotated + diamond) -->
+  <rect x="8" y="8" width="16" height="16" rx="1" fill="url(#outer)" transform="rotate(0 16 16)"/>
+  <rect x="8" y="8" width="16" height="16" rx="1" fill="url(#mid)" transform="rotate(45 16 16)"/>
+  <!-- Inner 4-pointed star -->
+  <path d="M16 4 L19 13 L28 16 L19 19 L16 28 L13 19 L4 16 L13 13 Z" fill="url(#mid)" opacity="0.6"/>
+  <!-- Bright center 4-pointed star -->
+  <path d="M16 8 L18 14 L24 16 L18 18 L16 24 L14 18 L8 16 L14 14 Z" fill="url(#center)"/>
+</svg>

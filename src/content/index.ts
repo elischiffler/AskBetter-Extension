@@ -10,7 +10,20 @@ import { renderOverlay, hideOverlay } from './overlay';
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 300;
 
-function onInputChange(el: HTMLElement): void {
+/**
+ * Safely send a message to the background script.
+ * Silently no-ops if the extension context has been invalidated
+ * (e.g. after an extension reload while the tab was still open).
+ */
+function safeSendMessage(message: object): void {
+  try {
+    chrome.runtime.sendMessage(message);
+  } catch {
+    // Context invalidated — extension was reloaded. Nothing to do.
+  }
+}
+
+function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatform>): void {
   if (debounceTimer) clearTimeout(debounceTimer);
 
   debounceTimer = setTimeout(() => {
@@ -22,10 +35,10 @@ function onInputChange(el: HTMLElement): void {
     }
 
     const score = analyzePrompt(text);
-    renderOverlay(score);
+    renderOverlay(score, el, platform ?? undefined);
 
     // Send score to background for popup display
-    chrome.runtime.sendMessage({ type: 'SCORE_UPDATE', score });
+    safeSendMessage({ type: 'SCORE_UPDATE', score });
   }, DEBOUNCE_MS);
 }
 
@@ -44,11 +57,11 @@ function init(): void {
     console.log(`[AskBetter] Found input element, attaching listener`);
 
     // Listen for input changes
-    input.addEventListener('input', () => onInputChange(input));
+    input.addEventListener('input', () => onInputChange(input, platform));
 
     // For contenteditable elements, also watch for mutations
     if (!(input instanceof HTMLTextAreaElement)) {
-      const observer = new MutationObserver(() => onInputChange(input));
+      const observer = new MutationObserver(() => onInputChange(input, platform));
       observer.observe(input, { childList: true, subtree: true, characterData: true });
     }
 
@@ -60,7 +73,7 @@ function init(): void {
           const text = getInputText(input);
           if (text.trim().length > 0) {
             const score = analyzePrompt(text);
-            chrome.runtime.sendMessage({ type: 'PROMPT_SUBMITTED', text, score });
+            safeSendMessage({ type: 'PROMPT_SUBMITTED', text, score });
           }
           // Hide overlay after sending
           setTimeout(hideOverlay, 500);

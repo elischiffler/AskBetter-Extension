@@ -7,6 +7,8 @@
 export interface PlatformConfig {
   name: string;
   inputSelector: string;
+  /** The outermost input bar container — badge will be inserted before this */
+  inputBarSelector?: string;
   /** Optional: selector for the send button (to detect when a prompt is submitted) */
   sendButtonSelector?: string;
 }
