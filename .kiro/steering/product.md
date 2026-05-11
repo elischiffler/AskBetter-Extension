@@ -25,6 +25,8 @@ Two-layer hybrid:
 1. **Heuristic** (`engine.ts`) — fires instantly at 300 ms debounce, always available
 2. **Ollama LLM** (`ollama.ts`) — fires async at 1500 ms debounce against local `llama3.2`, merges over heuristic result. Falls back silently if Ollama is not running.
 
+Transitions between layers are seamless: when the user resumes typing after an AI score has landed, the heuristic score is blended toward the last AI score using Dice bigram similarity — high similarity gives AI up to 60% weight, fading to 0% below 40% similarity. When the AI result arrives, a soft-floor is applied: if the AI scores lower than what's currently displayed, the result blends 30% AI / 70% displayed to prevent visible dips; if the AI scores higher, the full AI value is used. The currently displayed score is sent to Ollama as a baseline with an instruction to only score dimensions lower if the prompt has genuinely gotten worse. The badge number animates smoothly between values (280 ms ease-out) rather than jumping.
+
 ## Intent Classification
 
 Prompts are classified into one of four intents: `delegation`, `curiosity`, `collaborative`, `verification`. Intent influences how quality scores are weighted.

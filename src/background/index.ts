@@ -52,7 +52,20 @@ Score the given prompt on exactly these 4 dimensions, each 0-100:
 - clarity (0-100): Is it specific, well-contextualized, and unambiguous?
   0 = completely vague, 40 = clear intent with basic context, 70 = specific goal + constraints + format, 100 = crystal clear with all relevant context
 
-Calibration example:
+Calibration examples:
+
+Example 1 — vague/meaningless prompt:
+Prompt: "test test test"
+Expected scores: ownership=5, depth=5, critical=5, clarity=0, overall=4, intent="delegation"
+Suggestions must be about the literal words "test test test" — do NOT reference any other topic.
+Example suggestions: ["What are you trying to test? Describe the specific thing you want to check.", "Add context — is this a software test, a language test, or something else?", "What outcome are you expecting from this test?"]
+
+Example 2 — short delegation prompt:
+Prompt: "fix my code"
+Expected scores: ownership=10, depth=15, critical=10, clarity=5, overall=10, intent="delegation"
+Example suggestions: ["Share the code you want fixed and describe what it should do.", "What error or behaviour are you seeing that needs fixing?", "What have you already tried to fix it?"]
+
+Example 3 — medium quality prompt with context:
 Prompt: "how do i build a good breadth first search algorithm? I will be using python to code this on vscode."
 Expected scores: ownership=42, depth=48, critical=25, clarity=62, overall=44, intent="curiosity"
 Reasoning: Clear question with language/tool context (clarity=62), asks "how" showing curiosity (depth=48), provides tool context but no prior attempt (ownership=42), doesn't ask about tradeoffs or edge cases (critical=25).
@@ -62,14 +75,14 @@ Also provide:
 - intent: one of "delegation" | "curiosity" | "collaborative" | "verification"
 - suggestions: array of exactly 1-3 improvement tips. Rules for suggestions:
   * Each tip must be a concrete, specific question or phrase the user could literally add to their prompt.
-  * Each tip must reference the actual subject matter of the prompt — never give generic advice.
+  * Each tip must reference the actual subject matter of the prompt — NEVER reference BFS, graphs, algorithms, or any other topic unless the prompt itself mentions them.
   * Each tip must target a DIFFERENT weak dimension (ownership, depth, critical, or clarity).
   * Keep each tip under 90 characters.
   * Bad example (too generic): "Add more context to your prompt."
   * Good example (specific): "What have you already tried with the BFS implementation? Share your current code."
-  * Bad example (too generic): "Ask about edge cases."
-  * Good example (specific): "What should BFS do when the graph has cycles or disconnected nodes?"
   * You MUST provide suggestions if overall < 75. Only use an empty array if overall >= 75.
+
+CRITICAL: Your suggestions must only reference topics, technologies, and concepts that appear in the prompt being evaluated. Never invent topics.
 
 Respond with ONLY valid JSON, no markdown, no explanation:
 {"ownership":N,"depth":N,"critical":N,"clarity":N,"overall":N,"intent":"...","suggestions":["tip1","tip2","tip3"]}`;
@@ -98,6 +111,12 @@ async function fetchOllamaScore(text: string, heuristic?: HeuristicContext): Pro
         .join(', ');
       const flagList = heuristic.flags.length > 0 ? heuristic.flags.join(', ') : 'none';
       const topicList = heuristic.topics.length > 0 ? heuristic.topics.join(', ') : 'unknown';
+
+      const baselineBlock = heuristic.displayedScore
+        ? `- Currently displayed score (your baseline): ownership=${heuristic.displayedScore.ownership}, depth=${heuristic.displayedScore.depth}, critical=${heuristic.displayedScore.critical}, clarity=${heuristic.displayedScore.clarity}, overall=${heuristic.displayedScore.overall}
+- IMPORTANT: Only score a dimension LOWER than its baseline if the prompt has genuinely gotten worse in that area. If the user has added more context or detail, scores should increase from the baseline. This creates a smooth, progressive scoring experience.`
+        : '';
+
       preAnalysis = `
 Pre-analysis from heuristic scorer (use this to inform your suggestions):
 - Detected intent: ${heuristic.intent}
@@ -105,7 +124,7 @@ Pre-analysis from heuristic scorer (use this to inform your suggestions):
 - Heuristic scores: ownership=${heuristic.scores.ownership}, depth=${heuristic.scores.depth}, critical=${heuristic.scores.critical}, clarity=${heuristic.scores.clarity}, overall=${heuristic.scores.overall}
 - Weakest dimensions: ${weakDims || 'none'}
 - Detected signals: ${flagList}
-
+${baselineBlock}
 Use the key topics and weak dimensions above to write suggestions that are specific to THIS prompt.
 `;
     }
@@ -118,7 +137,7 @@ Use the key topics and weak dimensions above to write suggestions that are speci
         model: MODEL,
         prompt: `${SYSTEM_PROMPT}${preAnalysis}\n\nPrompt to evaluate:\n${text}`,
         stream: false,
-        options: { temperature: 0.1, num_predict: 350 },
+        options: { temperature: 0.1, num_predict: 500 },
       }),
     });
 
@@ -131,7 +150,7 @@ Use the key topics and weak dimensions above to write suggestions that are speci
     const raw = data.response?.trim() ?? '';
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.log('[AskBetter:bg] No JSON found in response');
+      console.log('[AskBetter:bg] No JSON found in response. Raw:', raw.slice(0, 500));
       return null;
     }
 

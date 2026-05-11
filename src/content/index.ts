@@ -33,6 +33,71 @@ let currentOllamaGen = 0;
 // observer noise (observer + input + keyup all fire for a single keystroke).
 let lastScoredText = '';
 
+// Last AI score — used to blend heuristic scores smoothly when the user
+// resumes typing after an AI score has landed.
+let lastAiScore: ReturnType<typeof analyzePrompt> | null = null;
+let lastAiText = '';
+
+// ---------------------------------------------------------------------------
+// Score blending — interpolates heuristic toward the last AI score based on
+// how much the prompt has changed since the AI scored it.
+// similarity=1 → text unchanged → trust AI fully
+// similarity=0 → text completely different → trust heuristic fully
+// ---------------------------------------------------------------------------
+
+function textSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+  // Character-level overlap ratio (Dice coefficient on bigrams)
+  const bigrams = (s: string) => {
+    const set = new Map<string, number>();
+    for (let i = 0; i < s.length - 1; i++) {
+      const bg = s.slice(i, i + 2);
+      set.set(bg, (set.get(bg) ?? 0) + 1);
+    }
+    return set;
+  };
+  const aMap = bigrams(a.toLowerCase());
+  const bMap = bigrams(b.toLowerCase());
+  let intersection = 0;
+  for (const [bg, count] of aMap) {
+    intersection += Math.min(count, bMap.get(bg) ?? 0);
+  }
+  const total = (a.length - 1) + (b.length - 1);
+  return total === 0 ? 0 : (2 * intersection) / total;
+}
+
+function blendScore(heuristic: number, ai: number, similarity: number): number {
+  // Blend weight: at similarity=1 use 50/50, at similarity=0 use heuristic fully.
+  // This means even identical text gets some heuristic influence (avoids pure lock-in),
+  // but as the prompt diverges the AI score fades out gracefully.
+  const aiWeight = similarity * 0.6;
+  return Math.round(heuristic * (1 - aiWeight) + ai * aiWeight);
+}
+
+function blendWithAiScore(
+  heuristic: ReturnType<typeof analyzePrompt>,
+  currentText: string,
+): ReturnType<typeof analyzePrompt> {
+  if (!lastAiScore) return heuristic;
+
+  const similarity = textSimilarity(currentText, lastAiText);
+  // Below 0.4 similarity the prompt has changed enough that AI score is stale
+  if (similarity < 0.4) {
+    lastAiScore = null; // clear so we don't keep blending on very different prompts
+    return heuristic;
+  }
+
+  return {
+    ...heuristic,
+    overall:   blendScore(heuristic.overall,   lastAiScore.overall,   similarity),
+    ownership: blendScore(heuristic.ownership, lastAiScore.ownership, similarity),
+    depth:     blendScore(heuristic.depth,     lastAiScore.depth,     similarity),
+    critical:  blendScore(heuristic.critical,  lastAiScore.critical,  similarity),
+    clarity:   blendScore(heuristic.clarity,   lastAiScore.clarity,   similarity),
+  };
+}
+
 function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatform>): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (ollamaTimer) clearTimeout(ollamaTimer);
@@ -60,12 +125,13 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
       return;
     }
 
-    // Layer 1: instant heuristic score
+    // Layer 1: instant heuristic score — blended toward last AI score if the
+    // prompt hasn't changed much, so the transition feels continuous.
     const heuristicScore = analyzePrompt(text);
-    lastScoredText = text; // mark this text as scored so observer noise doesn't hide pills
-    renderOverlay(heuristicScore, el, platform ?? undefined);
-    // Pills are held until Ollama responds — renderFeedback is called in scheduleOllamaScore
-    safeSendMessage({ type: 'SCORE_UPDATE', score: heuristicScore });
+    const displayScore = blendWithAiScore(heuristicScore, text);
+    lastScoredText = text;
+    renderOverlay(displayScore, el, platform ?? undefined);
+    safeSendMessage({ type: 'SCORE_UPDATE', score: displayScore });
 
     // Bump gen once, here, after the heuristic fires
     const gen = ++currentOllamaGen;
@@ -78,7 +144,7 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
 
     // Layer 2: async Ollama re-score after typing fully settles
     ollamaTimer = setTimeout(() => {
-      scheduleOllamaScore(text, heuristicScore, el, platform, gen);
+      scheduleOllamaScore(text, heuristicScore, displayScore, el, platform, gen);
     }, OLLAMA_EXTRA_MS);
   }, DEBOUNCE_MS);
 }
@@ -86,6 +152,7 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
 async function scheduleOllamaScore(
   text: string,
   heuristicScore: ReturnType<typeof analyzePrompt>,
+  displayScore: ReturnType<typeof analyzePrompt>,
   el: HTMLElement,
   platform: ReturnType<typeof detectPlatform>,
   gen: number,
@@ -106,12 +173,24 @@ async function scheduleOllamaScore(
       overall: heuristicScore.overall,
     },
     topics,
+    displayedScore: {
+      ownership: displayScore.ownership,
+      depth: displayScore.depth,
+      critical: displayScore.critical,
+      clarity: displayScore.clarity,
+      overall: displayScore.overall,
+    },
   };
 
   const aiScore = await scoreWithOllama(text, heuristicContext);
 
-  // If the user kept typing, a newer generation is running — discard this result
+  // Guard 1: generation counter — if the user typed again, discard this result
   if (gen !== currentOllamaGen) return;
+
+  // Guard 2: text match — if the current input no longer matches what we scored,
+  // discard. This catches the case where a slow in-flight response from a previous
+  // prompt arrives after the user has already changed the input.
+  if (text !== lastScoredText) return;
 
   // Stop pulsing regardless of whether Ollama succeeded
   setBadgeLoading(false);
@@ -126,15 +205,33 @@ async function scheduleOllamaScore(
   // Merge AI scores over the heuristic base — flags come from heuristic,
   // everything else (scores, intent, suggestions) comes from Ollama.
   // If Ollama returned empty suggestions, fall back to heuristic ones.
+  // Soft-floor: if the AI score is lower than what's currently displayed,
+  // blend toward the display score so the badge never visibly dips when
+  // the user has been steadily improving their prompt.
+  const softFloor = (ai: number, displayed: number): number => {
+    if (ai >= displayed) return ai; // AI is higher — use it directly
+    // AI is lower — blend 70% toward displayed to soften the dip
+    return Math.round(ai * 0.3 + displayed * 0.7);
+  };
+
+  const ds = displayScore; // shorthand
   const merged = {
     ...heuristicScore,
     ...aiScore,
+    ownership: softFloor(aiScore.ownership ?? heuristicScore.ownership, ds.ownership),
+    depth:     softFloor(aiScore.depth     ?? heuristicScore.depth,     ds.depth),
+    critical:  softFloor(aiScore.critical  ?? heuristicScore.critical,  ds.critical),
+    clarity:   softFloor(aiScore.clarity   ?? heuristicScore.clarity,   ds.clarity),
+    overall:   softFloor(aiScore.overall   ?? heuristicScore.overall,   ds.overall),
     suggestions: (aiScore.suggestions && aiScore.suggestions.length > 0)
       ? aiScore.suggestions
       : heuristicScore.suggestions,
   };
 
   console.log('[AskBetter] Ollama score received:', merged.overall);
+  // Store AI score so subsequent heuristic renders can blend toward it
+  lastAiScore = merged as ReturnType<typeof analyzePrompt>;
+  lastAiText = text;
   renderOverlay(merged, el, platform ?? undefined);
   renderFeedback(merged.suggestions, merged, el, platform ?? undefined);
   safeSendMessage({ type: 'SCORE_UPDATE', score: merged });
@@ -238,6 +335,8 @@ let lastUrl = location.href;
 const navObserver = new MutationObserver(() => {
   if (location.href !== lastUrl) {
     lastUrl = location.href;
+    lastAiScore = null;
+    lastAiText = '';
     hideOverlay();
     // Re-check the input after navigation — the new chat may have a draft
     setTimeout(() => {

@@ -20,6 +20,16 @@ export interface HeuristicContext {
     overall: number;
   };
   topics: string[]; // top TF-IDF phrases, most important first
+  /** The score currently displayed to the user (blended heuristic+AI).
+   *  Ollama uses this as a baseline — scores should only increase from here
+   *  unless the prompt has genuinely gotten worse. */
+  displayedScore?: {
+    ownership: number;
+    depth: number;
+    critical: number;
+    clarity: number;
+    overall: number;
+  };
 }
 
 /**

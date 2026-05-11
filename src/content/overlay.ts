@@ -648,6 +648,38 @@ export function setBadgeLoading(loading: boolean): void {
 // Public API
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Animated score counter — smoothly counts the displayed number from its
+// current value to the new target so score transitions feel fluid rather
+// than jumping. Uses requestAnimationFrame for 60fps smoothness.
+// ---------------------------------------------------------------------------
+
+let scoreAnimFrame: number | null = null;
+
+function animateScoreTo(textEl: Element, from: number, to: number): void {
+  if (scoreAnimFrame !== null) cancelAnimationFrame(scoreAnimFrame);
+  if (from === to) { textEl.textContent = String(to); return; }
+
+  const duration = 280; // ms — fast enough to feel snappy, slow enough to read
+  const start = performance.now();
+
+  function step(now: number): void {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    // Ease-out cubic
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(from + (to - from) * eased);
+    textEl.textContent = String(current);
+    if (progress < 1) {
+      scoreAnimFrame = requestAnimationFrame(step);
+    } else {
+      scoreAnimFrame = null;
+    }
+  }
+
+  scoreAnimFrame = requestAnimationFrame(step);
+}
+
 export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?: PlatformConfig): void {
   currentScore = score;
   const inputBar = findInputBar(inputEl, platform);
@@ -774,7 +806,8 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
   const text = badge.querySelector('#askbetter-badge-text');
   if (text) {
     text.setAttribute('fill', color);
-    text.textContent = String(score.overall);
+    const currentVal = parseInt(text.textContent ?? '0', 10);
+    animateScoreTo(text, isNaN(currentVal) ? score.overall : currentVal, score.overall);
   }
   const svg = badge.querySelector('#askbetter-badge-svg') as HTMLElement | null;
   if (svg) svg.style.filter = `drop-shadow(0 2px 10px ${color}55)`;
