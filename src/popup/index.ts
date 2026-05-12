@@ -1,60 +1,148 @@
 // ---------------------------------------------------------------------------
-// Popup script — runs when the user clicks the extension icon.
-// Shows the latest analysis score from the active tab.
+// Popup script — two-tab dashboard: Tips and Settings.
+// Settings are persisted via chrome.storage.sync and broadcast to content
+// scripts via a SETTINGS_UPDATE message.
 // ---------------------------------------------------------------------------
 
-const contentEl = document.getElementById('content');
-const statusEl = document.getElementById('status');
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-function renderScore(score: any): void {
-  if (!contentEl) return;
-
-  contentEl.innerHTML = `
-    <div style="text-align: center; margin-bottom: 12px;">
-      <div style="font-size: 36px; font-weight: 800; color: ${score.overall >= 70 ? '#4ade80' : score.overall >= 40 ? '#fbbf24' : '#f87171'};">
-        ${score.overall}
-      </div>
-      <div style="font-size: 11px; color: #6b5fa0; text-transform: uppercase; letter-spacing: 0.05em;">
-        Overall Score
-      </div>
-    </div>
-
-    <div class="score-row">
-      <span class="score-label">Ownership</span>
-      <span class="score-value">${score.ownership}</span>
-    </div>
-    <div class="score-row">
-      <span class="score-label">Depth</span>
-      <span class="score-value">${score.depth}</span>
-    </div>
-    <div class="score-row">
-      <span class="score-label">Critical</span>
-      <span class="score-value">${score.critical}</span>
-    </div>
-    <div class="score-row">
-      <span class="score-label">Clarity</span>
-      <span class="score-value">${score.clarity}</span>
-    </div>
-
-    <div style="margin-top: 12px; padding: 8px; background: rgba(139, 92, 246, 0.08); border-radius: 8px;">
-      <div style="font-size: 10px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
-        Intent: ${score.intent}
-      </div>
-      ${score.suggestions
-        .map(
-          (s: string) =>
-            `<div style="font-size: 11px; color: #c4b5fd; margin-top: 4px; line-height: 1.4;">💡 ${s}</div>`
-        )
-        .join('')}
-    </div>
-  `;
+interface Settings {
+  pillsEnabled: boolean;
+  badgeEnabled: boolean;
 }
 
-// Request the latest score from the background script
-chrome.runtime.sendMessage({ type: 'GET_LATEST_SCORE' }, (response) => {
-  if (response?.score) {
-    renderScore(response.score);
-  } else if (statusEl) {
-    statusEl.textContent = 'Start typing in ChatGPT, Gemini, or Perplexity to see your score.';
+const DEFAULT_SETTINGS: Settings = {
+  pillsEnabled: true,
+  badgeEnabled: true,
+};
+
+// ---------------------------------------------------------------------------
+// Settings persistence
+// ---------------------------------------------------------------------------
+
+async function loadSettings(): Promise<Settings> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get('askbetter_settings', (result) => {
+      const saved = result['askbetter_settings'] as Partial<Settings> | undefined;
+      resolve({ ...DEFAULT_SETTINGS, ...saved });
+    });
+  });
+}
+
+function saveSettings(settings: Settings): void {
+  chrome.storage.sync.set({ askbetter_settings: settings });
+  // Broadcast to all content scripts so changes take effect immediately
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id != null) {
+        chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATE', settings }).catch(() => {
+          /* tab may not have content script */
+        });
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tab switching
+// ---------------------------------------------------------------------------
+
+function initTabs(): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
+  const panels = document.querySelectorAll<HTMLElement>('.tab-panel');
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset['tab'];
+      buttons.forEach((b) => b.classList.toggle('active', b === btn));
+      panels.forEach((p) => {
+        const id = p.id.replace('tab-', '');
+        p.classList.toggle('active', id === target);
+      });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Settings tab
+// ---------------------------------------------------------------------------
+
+function initSettingsTab(settings: Settings): void {
+  const pillsEl = document.getElementById('setting-pills') as HTMLInputElement | null;
+  const badgeEl = document.getElementById('setting-badge') as HTMLInputElement | null;
+  const resetBtn = document.getElementById('reset-btn');
+  const toast = document.getElementById('saved-toast');
+
+  if (!pillsEl || !badgeEl) return;
+
+  // Populate from loaded settings
+  pillsEl.checked = settings.pillsEnabled;
+  badgeEl.checked = settings.badgeEnabled;
+
+  function showToast(): void {
+    if (!toast) return;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1800);
   }
-});
+
+  function currentSettings(): Settings {
+    return {
+      pillsEnabled: pillsEl!.checked,
+      badgeEnabled: badgeEl!.checked,
+    };
+  }
+
+  function persist(): void {
+    saveSettings(currentSettings());
+    showToast();
+  }
+
+  pillsEl.addEventListener('change', persist);
+  badgeEl.addEventListener('change', persist);
+
+  resetBtn?.addEventListener('click', () => {
+    pillsEl.checked = DEFAULT_SETTINGS.pillsEnabled;
+    badgeEl.checked = DEFAULT_SETTINGS.badgeEnabled;
+    saveSettings(DEFAULT_SETTINGS);
+    showToast();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Platform badge in header
+// ---------------------------------------------------------------------------
+
+function setPlatformBadge(): void {
+  const badge = document.getElementById('platform-badge');
+  if (!badge) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const url = tabs[0]?.url ?? '';
+    if (url.includes('chatgpt.com') || url.includes('chat.openai.com')) {
+      badge.textContent = 'ChatGPT';
+    } else if (url.includes('gemini.google.com')) {
+      badge.textContent = 'Gemini';
+    } else if (url.includes('perplexity.ai')) {
+      badge.textContent = 'Perplexity';
+    } else {
+      badge.textContent = 'Inactive';
+      badge.style.color = '#6b5fa0';
+      badge.style.borderColor = 'rgba(107, 95, 160, 0.3)';
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+
+async function boot(): Promise<void> {
+  initTabs();
+  setPlatformBadge();
+
+  const settings = await loadSettings();
+  initSettingsTab(settings);
+}
+
+boot();

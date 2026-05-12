@@ -10,80 +10,546 @@
         padding: 0;
         box-sizing: border-box;
       }
+
+      html {
+        overflow: hidden;
+      }
+
+      /* Sleek minimal scrollbar — matches the purple glass UI */
+      ::-webkit-scrollbar {
+        width: 3px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(167, 139, 250, 0.25);
+        border-radius: 99px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(167, 139, 250, 0.45);
+      }
+
       body {
         width: 320px;
-        min-height: 200px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         background: #0f0a1e;
         color: #f5f3ff;
+        overflow-x: hidden;
       }
+
+      /* ── Header ── */
       .header {
-        padding: 16px;
-        border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px 12px;
+        border-bottom: 1px solid rgba(167, 139, 250, 0.15);
       }
       .header h1 {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.12em;
+        color: rgba(167, 139, 250, 0.9);
       }
       .header h1 span {
-        color: #7c3aed;
-      }
-      .content {
-        padding: 16px;
-      }
-      .score-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 0;
-        border-bottom: 1px solid rgba(139, 92, 246, 0.1);
-      }
-      .score-label {
-        font-size: 12px;
-        color: #a78bfa;
-      }
-      .score-value {
-        font-size: 14px;
-        font-weight: 700;
         color: #f5f3ff;
       }
-      .status {
-        padding: 12px;
-        margin-top: 12px;
-        border-radius: 8px;
+      .platform-pill {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(167, 139, 250, 0.7);
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.07) 0%,
+          rgba(255, 255, 255, 0.02) 100%
+        );
+        border: 1px solid rgba(167, 139, 250, 0.25);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        padding: 3px 10px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+
+      /* ── Tabs ── */
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid rgba(167, 139, 250, 0.12);
+      }
+      .tab-btn {
+        flex: 1;
+        padding: 9px 4px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(167, 139, 250, 0.4);
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+      .tab-btn:hover {
+        color: rgba(167, 139, 250, 0.75);
+      }
+      .tab-btn.active {
+        color: rgba(167, 139, 250, 0.95);
+        border-bottom-color: rgba(167, 139, 250, 0.6);
+      }
+
+      /* ── Tab panels ── */
+      .tab-panel {
+        display: none;
+        padding: 14px 14px 16px;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ── Tips tab ── */
+      .tips-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .tip-card {
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.07) 0%,
+          rgba(255, 255, 255, 0.02) 100%
+        );
+        border: 1px solid rgba(167, 139, 250, 0.18);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 10px 12px;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .tip-card:hover {
+        border-color: rgba(167, 139, 250, 0.35);
+        box-shadow: 0 0 18px 2px rgba(167, 139, 250, 0.08);
+      }
+
+      .tip-card-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+
+      /* Score-tinted glass dot — mirrors the badge circle style */
+      .tip-dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      .tip-dot::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.18) 0%,
+          rgba(255, 255, 255, 0.02) 100%
+        );
+      }
+
+      .tip-card-title {
         font-size: 11px;
-        text-align: center;
-        color: #6b5fa0;
-        background: rgba(139, 92, 246, 0.08);
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #f5f3ff;
       }
-      .footer {
-        padding: 12px 16px;
-        text-align: center;
-      }
-      .footer a {
+
+      .tip-card-body {
         font-size: 11px;
-        color: #7c3aed;
-        text-decoration: none;
+        color: rgba(167, 139, 250, 0.75);
+        line-height: 1.5;
+        margin-bottom: 6px;
       }
-      .footer a:hover {
-        color: #a78bfa;
+
+      .tip-examples {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .tip-example {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        font-size: 10px;
+        color: rgba(167, 139, 250, 0.5);
+        font-style: italic;
+        line-height: 1.4;
+      }
+      .tip-example-dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: rgba(167, 139, 250, 0.4);
+        flex-shrink: 0;
+        margin-top: 5px;
+      }
+
+      /* ── Settings tab ── */
+      .settings-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .setting-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.05) 0%,
+          rgba(255, 255, 255, 0.01) 100%
+        );
+        border: 1px solid rgba(167, 139, 250, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        transition: border-color 0.15s;
+      }
+      .setting-card:hover {
+        border-color: rgba(167, 139, 250, 0.25);
+      }
+
+      .setting-info {
+        flex: 1;
+      }
+      .setting-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: rgba(167, 139, 250, 0.9);
+        margin-bottom: 2px;
+      }
+      .setting-desc {
+        font-size: 10px;
+        color: rgba(167, 139, 250, 0.4);
+        line-height: 1.4;
+      }
+
+      /* Toggle — mirrors the pill border style */
+      .toggle {
+        position: relative;
+        width: 34px;
+        height: 18px;
+        flex-shrink: 0;
+      }
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+      .toggle-track {
+        position: absolute;
+        inset: 0;
+        background: rgba(167, 139, 250, 0.12);
+        border-radius: 99px;
+        border: 1px solid rgba(167, 139, 250, 0.2);
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      .toggle-track::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 12px;
+        height: 12px;
+        background: rgba(167, 139, 250, 0.4);
+        border-radius: 50%;
+        transition:
+          transform 0.2s,
+          background 0.2s;
+      }
+      .toggle input:checked + .toggle-track {
+        background: rgba(167, 139, 250, 0.25);
+        border-color: rgba(167, 139, 250, 0.5);
+        box-shadow: 0 0 10px 1px rgba(167, 139, 250, 0.2);
+      }
+      .toggle input:checked + .toggle-track::after {
+        transform: translateX(16px);
+        background: rgba(167, 139, 250, 0.95);
+      }
+
+      .settings-gap {
+        height: 6px;
+      }
+
+      /* Reset button — styled like a pill with red tint */
+      .reset-btn {
+        width: 100%;
+        padding: 8px 12px;
+        background: linear-gradient(
+          135deg,
+          rgba(248, 113, 113, 0.08) 0%,
+          rgba(248, 113, 113, 0.03) 100%
+        );
+        border: 1px solid rgba(248, 113, 113, 0.2);
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        color: rgba(248, 113, 113, 0.7);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          color 0.15s,
+          box-shadow 0.15s;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .reset-btn:hover {
+        border-color: rgba(248, 113, 113, 0.4);
+        color: rgba(248, 113, 113, 0.95);
+        box-shadow: 0 0 14px 1px rgba(248, 113, 113, 0.12);
+      }
+
+      .saved-toast {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(74, 222, 128, 0.7);
+        text-align: center;
+        height: 14px;
+        margin-top: 8px;
+        transition: opacity 0.3s;
+        opacity: 0;
+      }
+      .saved-toast.show {
+        opacity: 1;
       }
     </style>
   </head>
   <body>
     <div class="header">
       <h1>Ask<span>Better</span></h1>
+      <span class="platform-pill" id="platform-badge">—</span>
     </div>
-    <div class="content" id="content">
-      <div class="status" id="status">
-        Navigate to ChatGPT, Gemini, or Perplexity to start analyzing.
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tips">Tips</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- ── Tips tab ── -->
+    <div class="tab-panel active" id="tab-tips">
+      <div class="tips-list">
+        <div class="tip-card">
+          <div class="tip-card-header">
+            <div
+              class="tip-dot"
+              style="
+                background: rgba(74, 222, 128, 0.15);
+                border: 1px solid rgba(74, 222, 128, 0.35);
+                box-shadow: 0 0 10px 1px rgba(74, 222, 128, 0.15);
+              "
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <circle cx="5" cy="5" r="3" fill="#4ade80" />
+              </svg>
+            </div>
+            <span class="tip-card-title">Ownership</span>
+          </div>
+          <div class="tip-card-body">
+            Show your own thinking — what you've tried, your current understanding, or constraints
+            you're working within.
+          </div>
+          <div class="tip-examples">
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"I've tried X but it fails because…"</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"My constraint is that I can't use Y."</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"I think the issue is Z, but I'm not sure."</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tip-card">
+          <div class="tip-card-header">
+            <div
+              class="tip-dot"
+              style="
+                background: rgba(251, 191, 36, 0.15);
+                border: 1px solid rgba(251, 191, 36, 0.35);
+                box-shadow: 0 0 10px 1px rgba(251, 191, 36, 0.15);
+              "
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <circle cx="5" cy="5" r="3" fill="#fbbf24" />
+              </svg>
+            </div>
+            <span class="tip-card-title">Depth</span>
+          </div>
+          <div class="tip-card-body">
+            Ask why and how, not just what. Prompts that seek understanding score higher than those
+            that just request an output.
+          </div>
+          <div class="tip-examples">
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"Why does this approach work better than…?"</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"How does X relate to Y under the hood?"</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"What are the underlying principles here?"</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tip-card">
+          <div class="tip-card-header">
+            <div
+              class="tip-dot"
+              style="
+                background: rgba(248, 113, 113, 0.15);
+                border: 1px solid rgba(248, 113, 113, 0.35);
+                box-shadow: 0 0 10px 1px rgba(248, 113, 113, 0.15);
+              "
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <circle cx="5" cy="5" r="3" fill="#f87171" />
+              </svg>
+            </div>
+            <span class="tip-card-title">Critical</span>
+          </div>
+          <div class="tip-card-body">
+            Probe edge cases, tradeoffs, and alternatives. Ask the AI to challenge its own answer or
+            consider failure modes.
+          </div>
+          <div class="tip-examples">
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"What are the risks or downsides of this?"</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"What would break this approach?"</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"What alternatives should I consider?"</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tip-card">
+          <div class="tip-card-header">
+            <div
+              class="tip-dot"
+              style="
+                background: rgba(96, 165, 250, 0.15);
+                border: 1px solid rgba(96, 165, 250, 0.35);
+                box-shadow: 0 0 10px 1px rgba(96, 165, 250, 0.15);
+              "
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <circle cx="5" cy="5" r="3" fill="#60a5fa" />
+              </svg>
+            </div>
+            <span class="tip-card-title">Clarity</span>
+          </div>
+          <div class="tip-card-body">
+            Be specific and well-contextualized. Name your tools, audience, format, and goal so the
+            AI has no room to guess.
+          </div>
+          <div class="tip-examples">
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"I'm using Python 3.11 with FastAPI."</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"Format the response as bullet points."</span>
+            </div>
+            <div class="tip-example">
+              <div class="tip-example-dot"></div>
+              <span>"The audience is a non-technical manager."</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="footer">
-      <a href="https://ask-better-kiro-hacks.vercel.app" target="_blank"> Open Dashboard ↗ </a>
+
+    <!-- ── Settings tab ── -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="settings-list">
+        <div class="setting-card">
+          <div class="setting-info">
+            <div class="setting-label">Feedback pills</div>
+            <div class="setting-desc">Show suggestion pills on input bar hover.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-pills" checked />
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+
+        <div class="settings-gap"></div>
+
+        <div class="setting-card">
+          <div class="setting-info">
+            <div class="setting-label">Score badge</div>
+            <div class="setting-desc">Show the floating score circle next to the input.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-badge" checked />
+            <div class="toggle-track"></div>
+          </label>
+        </div>
+
+        <div class="settings-gap"></div>
+        <div class="settings-gap"></div>
+
+        <button class="reset-btn" id="reset-btn">Reset to defaults</button>
+        <div class="saved-toast" id="saved-toast">Saved ✓</div>
+      </div>
     </div>
+
     <script src="dist/popup.js" type="module"></script>
   </body>
 </html>

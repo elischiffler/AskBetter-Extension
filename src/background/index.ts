@@ -30,7 +30,17 @@ interface OllamaRequest {
   heuristic?: HeuristicContext;
 }
 
-type Message = ScoreMessage | PromptMessage | OllamaRequest;
+interface SettingsUpdate {
+  type: 'SETTINGS_UPDATE';
+  settings: {
+    ollamaEnabled: boolean;
+    debounceMs: number;
+    pillsEnabled: boolean;
+    badgeEnabled: boolean;
+  };
+}
+
+type Message = ScoreMessage | PromptMessage | OllamaRequest | SettingsUpdate;
 
 // ---------------------------------------------------------------------------
 // Ollama config
@@ -238,6 +248,21 @@ async function fetchOllamaScore(
 
 let latestScore: LiveScore | null = null;
 
+// Active settings — updated when the popup broadcasts SETTINGS_UPDATE
+let activeSettings = {
+  ollamaEnabled: true,
+  debounceMs: 300,
+  pillsEnabled: true,
+  badgeEnabled: true,
+};
+
+// Load persisted settings on startup
+chrome.storage.sync.get('askbetter_settings', (result) => {
+  if (result['askbetter_settings']) {
+    activeSettings = { ...activeSettings, ...result['askbetter_settings'] };
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Message listeners
 // ---------------------------------------------------------------------------
@@ -261,11 +286,22 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   }
 
   if (message.type === 'OLLAMA_SCORE') {
+    // Respect the ollamaEnabled setting — if disabled, return null immediately
+    if (!activeSettings.ollamaEnabled) {
+      sendResponse({ score: null });
+      return true;
+    }
     // Proxy the Ollama fetch and return the result asynchronously
     fetchOllamaScore(message.text, message.heuristic).then((score) => {
       sendResponse({ score });
     });
     return true; // keep message channel open for async response
+  }
+
+  if (message.type === 'SETTINGS_UPDATE') {
+    activeSettings = { ...activeSettings, ...message.settings };
+    sendResponse({ ok: true });
+    return true;
   }
 
   sendResponse({ ok: true });

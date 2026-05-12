@@ -51,7 +51,6 @@ Then load the extension in Chrome:
 ## TODO
 
 - [ ] Port full scoring logic from `askbetter/src/analysis/`
-- [ ] Add settings page (toggle overlay, configure API connection)
 - [ ] Track submitted prompts and sync to dashboard
 - [ ] Handle platform DOM changes (selectors may need updating)
 - [ ] Publish to Chrome Web Store

@@ -56,6 +56,9 @@ let mouseInsideInputBar = false;
 // Animated score counter state
 let scoreAnimFrame: number | null = null;
 
+// Timeout handle for the OVERALL label fade-out removal — cancelled on re-hover
+let badgeLabelRemoveTimeout: ReturnType<typeof setTimeout> | null = null;
+
 // ---------------------------------------------------------------------------
 // Colour helper
 // ---------------------------------------------------------------------------
@@ -414,30 +417,42 @@ function showBubbles(badge: HTMLElement): void {
   const stackTop = badgeTop - BUBBLE_GAP - stackH;
 
   // "OVERALL" label below the badge — fades in with the bubbles
-  const badgeLabel = document.createElement('div');
-  badgeLabel.id = BADGE_LABEL_ID;
-  badgeLabel.textContent = 'OVERALL';
-  badgeLabel.style.cssText = `
-    position: fixed;
-    left: ${badgeCx}px;
-    top: ${badgeRect.bottom + 4}px;
-    transform: translateX(-50%);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: rgba(167,139,250,0.9);
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: ${BADGE_Z};
-    opacity: 0;
-    transition: opacity 0.25s ease;
-  `;
-  document.body.appendChild(badgeLabel);
+  // Reuse existing element if present (e.g. rapid re-hover before fade-out completes)
+  let badgeLabel = document.getElementById(BADGE_LABEL_ID) as HTMLElement | null;
+  if (!badgeLabel) {
+    badgeLabel = document.createElement('div');
+    badgeLabel.id = BADGE_LABEL_ID;
+    badgeLabel.textContent = 'OVERALL';
+    badgeLabel.style.cssText = `
+      position: fixed;
+      left: ${badgeCx}px;
+      top: ${badgeRect.bottom + 4}px;
+      transform: translateX(-50%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 8px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: rgba(167,139,250,0.9);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: ${BADGE_Z};
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    `;
+    document.body.appendChild(badgeLabel);
+  } else {
+    // Update position in case badge moved, and cancel any in-progress fade-out
+    badgeLabel.style.left = `${badgeCx}px`;
+    badgeLabel.style.top = `${badgeRect.bottom + 4}px`;
+    if (badgeLabelRemoveTimeout !== null) {
+      clearTimeout(badgeLabelRemoveTimeout);
+      badgeLabelRemoveTimeout = null;
+    }
+  }
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      badgeLabel.style.opacity = '1';
+      badgeLabel!.style.opacity = '1';
     })
   );
 
@@ -484,7 +499,10 @@ function hideBubbles(): void {
   const badgeLabel = document.getElementById(BADGE_LABEL_ID);
   if (badgeLabel) {
     badgeLabel.style.opacity = '0';
-    setTimeout(() => badgeLabel.remove(), 260);
+    badgeLabelRemoveTimeout = setTimeout(() => {
+      badgeLabel.remove();
+      badgeLabelRemoveTimeout = null;
+    }, 260);
   }
 
   document.querySelectorAll<HTMLElement>(`.${BUBBLE_CLASS}`).forEach((b) => {

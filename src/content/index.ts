@@ -208,7 +208,9 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
     const heuristicScore = analyzePrompt(text);
     const displayScore = blendWithAiScore(heuristicScore, text);
     lastScoredText = text;
-    renderOverlay(displayScore, el, platform ?? undefined);
+    if (contentSettings.badgeEnabled) {
+      renderOverlay(displayScore, el, platform ?? undefined);
+    }
     safeSendMessage({ type: 'SCORE_UPDATE', score: displayScore });
 
     // Bump generation counter after the heuristic fires
@@ -252,7 +254,9 @@ async function scheduleOllamaScore(
 
   if (!aiScore) {
     console.log('[AskBetter] Ollama unavailable — falling back to heuristic suggestions');
-    renderFeedback(heuristicScore.suggestions, heuristicScore, el, platform ?? undefined);
+    if (contentSettings.pillsEnabled) {
+      renderFeedback(heuristicScore.suggestions, heuristicScore, el, platform ?? undefined);
+    }
     return;
   }
 
@@ -281,8 +285,12 @@ async function scheduleOllamaScore(
   lastAiScore = merged as ReturnType<typeof analyzePrompt>;
   lastAiText = text;
 
-  renderOverlay(merged, el, platform ?? undefined);
-  renderFeedback(merged.suggestions, merged, el, platform ?? undefined);
+  if (contentSettings.badgeEnabled) {
+    renderOverlay(merged, el, platform ?? undefined);
+  }
+  if (contentSettings.pillsEnabled) {
+    renderFeedback(merged.suggestions, merged, el, platform ?? undefined);
+  }
   safeSendMessage({ type: 'SCORE_UPDATE', score: merged });
 }
 
@@ -403,3 +411,53 @@ document.addEventListener('visibilitychange', () => {
     onInputChange(activeInput, detectPlatform());
   }
 });
+
+// ---------------------------------------------------------------------------
+// Settings — listen for changes broadcast from the popup
+// ---------------------------------------------------------------------------
+
+interface ContentSettings {
+  pillsEnabled: boolean;
+  badgeEnabled: boolean;
+}
+
+// Active settings — applied immediately when received
+let contentSettings: ContentSettings = {
+  pillsEnabled: true,
+  badgeEnabled: true,
+};
+
+// Load persisted settings on startup and apply them
+chrome.storage.sync.get('askbetter_settings', (result) => {
+  if (result['askbetter_settings']) {
+    applySettings(result['askbetter_settings'] as Partial<ContentSettings>);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'SETTINGS_UPDATE') {
+    applySettings(message.settings as Partial<ContentSettings>);
+  }
+});
+
+function applySettings(settings: Partial<ContentSettings>): void {
+  const prevBadge = contentSettings.badgeEnabled;
+  const prevPills = contentSettings.pillsEnabled;
+
+  contentSettings = { ...contentSettings, ...settings };
+
+  // Badge toggled off → hide immediately
+  if (prevBadge && !contentSettings.badgeEnabled) {
+    hideOverlay();
+  }
+  // Badge toggled on → re-score to show it
+  if (!prevBadge && contentSettings.badgeEnabled && activeInput) {
+    onInputChange(activeInput, detectPlatform());
+  }
+
+  // Pills toggled off → clear immediately
+  if (prevPills && !contentSettings.pillsEnabled) {
+    hideFeedback(true);
+  }
+  // Pills toggled on → nothing to do; they'll appear next time feedback arrives
+}
