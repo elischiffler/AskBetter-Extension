@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Format on Agent Stop",
+  "description": "Runs Prettier on all TypeScript source files and popup.html after each agent prompt finishes",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npm run format",
+    "timeout": 30
+  }
+}

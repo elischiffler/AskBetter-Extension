@@ -38,7 +38,7 @@ export interface HeuristicContext {
  */
 export async function scoreWithOllama(
   text: string,
-  heuristic?: HeuristicContext,
+  heuristic?: HeuristicContext
 ): Promise<Partial<LiveScore> | null> {
   return new Promise((resolve) => {
     try {

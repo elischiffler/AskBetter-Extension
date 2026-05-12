@@ -243,11 +243,7 @@ function makeBubble(value: number, index: number): HTMLElement {
     svg.style.filter = `drop-shadow(0 2px 10px ${color}55)`;
     const rel = e.relatedTarget as HTMLElement | null;
     // Stay open if moving to another bubble, the bridge, or the badge
-    if (
-      rel?.closest(`.${BUBBLE_CLASS}`) ||
-      rel?.id === BRIDGE_ID ||
-      rel?.id === BADGE_ID
-    ) return;
+    if (rel?.closest(`.${BUBBLE_CLASS}`) || rel?.id === BRIDGE_ID || rel?.id === BADGE_ID) return;
     hideBubbles();
   });
 
@@ -301,16 +297,18 @@ function showBubbles(badge: HTMLElement): void {
   `;
   document.body.appendChild(badgeLabel);
   // Fade in after a frame so transition fires
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    badgeLabel.style.opacity = '1';
-  }));
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      badgeLabel.style.opacity = '1';
+    })
+  );
 
   KEYS.forEach((key, i) => {
     const value = currentScore![key] as number;
     const bubble = makeBubble(value, i);
 
     const stackIndex = KEYS.length - 1 - i;
-    const bottomY = badgeTop - BUBBLE_GAP - (stackIndex * rowH);
+    const bottomY = badgeTop - BUBBLE_GAP - stackIndex * rowH;
     const leftX = badgeCx - BUBBLE_SIZE / 2;
 
     bubble.style.left = `${leftX}px`;
@@ -356,7 +354,7 @@ function hideBubbles(): void {
     setTimeout(() => badgeLabel.remove(), 260);
   }
 
-  document.querySelectorAll<HTMLElement>(`.${BUBBLE_CLASS}`).forEach(b => {
+  document.querySelectorAll<HTMLElement>(`.${BUBBLE_CLASS}`).forEach((b) => {
     b.classList.remove('visible');
     setTimeout(() => b.remove(), 260);
   });
@@ -426,14 +424,21 @@ let inputBarLeaveListener: ((e: MouseEvent) => void) | null = null;
 let mouseInsideInputBar = false;
 
 function showPendingPills(): void {
-  console.log('[AskBetter:pills] mouseenter fired — pendingScores:', pendingScores, 'suggestions:', pendingSuggestions, 'inputEl:', pendingInputEl);
+  console.log(
+    '[AskBetter:pills] mouseenter fired — pendingScores:',
+    pendingScores,
+    'suggestions:',
+    pendingSuggestions,
+    'inputEl:',
+    pendingInputEl
+  );
   if (!pendingScores || pendingSuggestions.length === 0 || !pendingInputEl) {
     console.log('[AskBetter:pills] showPendingPills bailed — missing data');
     return;
   }
   injectFeedbackStyles();
 
-  document.querySelectorAll<HTMLElement>(`.${FEEDBACK_CLASS}`).forEach(p => p.remove());
+  document.querySelectorAll<HTMLElement>(`.${FEEDBACK_CLASS}`).forEach((p) => p.remove());
   document.getElementById(FEEDBACK_BRIDGE_ID)?.remove();
   feedbackVisible = true;
 
@@ -442,10 +447,10 @@ function showPendingPills(): void {
   console.log('[AskBetter:pills] rendering pills at rect:', rect.left, rect.top, rect.width);
 
   const dimOrder: (keyof typeof pendingScores)[] = ['ownership', 'depth', 'critical', 'clarity'];
-  const lowDims = dimOrder.filter(k => pendingScores![k] < 60);
+  const lowDims = dimOrder.filter((k) => pendingScores![k] < 60);
 
   pendingSuggestions.slice(0, 3).forEach((text, i) => {
-    const isGreen = lowDims.length === 0 || (lowDims[i] === undefined);
+    const isGreen = lowDims.length === 0 || lowDims[i] === undefined;
     const color = isGreen ? '#4ade80' : '#f87171';
     const glowColor = isGreen ? 'rgba(74, 222, 128, 0.18)' : 'rgba(248, 113, 113, 0.18)';
     const borderColor = isGreen ? 'rgba(74, 222, 128, 0.35)' : 'rgba(248, 113, 113, 0.35)';
@@ -500,10 +505,11 @@ function showPendingPills(): void {
       const rel = e.relatedTarget as HTMLElement | null;
       // Stay open if moving to the input bar, the bridge, or another pill
       if (
-        rel && (inputBarHoverEl?.contains(rel) || rel === inputBarHoverEl) ||
+        (rel && (inputBarHoverEl?.contains(rel) || rel === inputBarHoverEl)) ||
         rel?.closest(`.${FEEDBACK_CLASS}`) ||
         rel?.id === FEEDBACK_BRIDGE_ID
-      ) return;
+      )
+        return;
       mouseInsideInputBar = false;
       hideFeedback();
     });
@@ -532,9 +538,10 @@ function showPendingPills(): void {
   bridge.addEventListener('mouseleave', (e: MouseEvent) => {
     const rel = e.relatedTarget as HTMLElement | null;
     if (
-      rel && (inputBarHoverEl?.contains(rel) || rel === inputBarHoverEl) ||
+      (rel && (inputBarHoverEl?.contains(rel) || rel === inputBarHoverEl)) ||
       rel?.closest(`.${FEEDBACK_CLASS}`)
-    ) return;
+    )
+      return;
     mouseInsideInputBar = false;
     hideFeedback();
   });
@@ -548,10 +555,17 @@ export function attachInputBarHover(inputEl: HTMLElement, platform?: PlatformCon
   }
 
   const inputBar = findInputBar(inputEl, platform);
-  console.log('[AskBetter:pills] attachInputBarHover — resolved inputBar:', inputBar.tagName, inputBar.className.slice(0, 80));
+  console.log(
+    '[AskBetter:pills] attachInputBarHover — resolved inputBar:',
+    inputBar.tagName,
+    inputBar.className.slice(0, 80)
+  );
   inputBarHoverEl = inputBar;
 
-  inputBarEnterListener = () => { mouseInsideInputBar = true; showPendingPills(); };
+  inputBarEnterListener = () => {
+    mouseInsideInputBar = true;
+    showPendingPills();
+  };
   inputBarLeaveListener = (e: MouseEvent) => {
     const rel = e.relatedTarget as HTMLElement | null;
     // Don't hide if the mouse is moving onto a pill or the bridge — let those handle dismissal.
@@ -572,15 +586,20 @@ export function renderFeedback(
   suggestions: string[],
   scores: Pick<LiveScore, 'ownership' | 'depth' | 'critical' | 'clarity'>,
   inputEl: HTMLElement,
-  platform?: PlatformConfig,
+  platform?: PlatformConfig
 ): void {
-  console.log('[AskBetter:pills] renderFeedback called — suggestions:', suggestions, 'scores:', scores);
+  console.log(
+    '[AskBetter:pills] renderFeedback called — suggestions:',
+    suggestions,
+    'scores:',
+    scores
+  );
   pendingSuggestions = suggestions;
   pendingScores = scores;
   pendingInputEl = inputEl;
   pendingPlatform = platform;
   if (feedbackVisible) {
-    document.querySelectorAll<HTMLElement>(`.${FEEDBACK_CLASS}`).forEach(p => p.remove());
+    document.querySelectorAll<HTMLElement>(`.${FEEDBACK_CLASS}`).forEach((p) => p.remove());
     feedbackVisible = false;
   }
   if (mouseInsideInputBar) {
@@ -605,11 +624,11 @@ export function hideFeedback(instant = false): void {
   if (pills.length === 0) return;
 
   if (instant) {
-    pills.forEach(p => p.remove());
+    pills.forEach((p) => p.remove());
     return;
   }
 
-  pills.forEach(p => {
+  pills.forEach((p) => {
     p.classList.add('hiding');
     setTimeout(() => p.remove(), 240);
   });
@@ -658,7 +677,10 @@ let scoreAnimFrame: number | null = null;
 
 function animateScoreTo(textEl: Element, from: number, to: number): void {
   if (scoreAnimFrame !== null) cancelAnimationFrame(scoreAnimFrame);
-  if (from === to) { textEl.textContent = String(to); return; }
+  if (from === to) {
+    textEl.textContent = String(to);
+    return;
+  }
 
   const duration = 280; // ms — fast enough to feel snappy, slow enough to read
   const start = performance.now();
@@ -680,7 +702,11 @@ function animateScoreTo(textEl: Element, from: number, to: number): void {
   scoreAnimFrame = requestAnimationFrame(step);
 }
 
-export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?: PlatformConfig): void {
+export function renderOverlay(
+  score: LiveScore,
+  inputEl: HTMLElement,
+  platform?: PlatformConfig
+): void {
   currentScore = score;
   const inputBar = findInputBar(inputEl, platform);
   const color = getScoreColor(score.overall);
@@ -719,13 +745,15 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
     // Glass bg
     const glassBg = document.createElementNS(svgNS, 'circle');
     glassBg.setAttribute('id', 'askbetter-badge-glassbg');
-    glassBg.setAttribute('cx', String(cx)); glassBg.setAttribute('cy', String(cy));
+    glassBg.setAttribute('cx', String(cx));
+    glassBg.setAttribute('cy', String(cy));
     glassBg.setAttribute('r', String(INNER_R + 3));
     svg.appendChild(glassBg);
 
     // Purple ring accent
     const purpleRing = document.createElementNS(svgNS, 'circle');
-    purpleRing.setAttribute('cx', String(cx)); purpleRing.setAttribute('cy', String(cy));
+    purpleRing.setAttribute('cx', String(cx));
+    purpleRing.setAttribute('cy', String(cy));
     purpleRing.setAttribute('r', String(INNER_R + 3));
     purpleRing.setAttribute('fill', 'none');
     purpleRing.setAttribute('stroke', 'rgba(167,139,250,0.18)');
@@ -734,14 +762,16 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
 
     // Glass highlight
     const highlight = document.createElementNS(svgNS, 'circle');
-    highlight.setAttribute('cx', String(cx)); highlight.setAttribute('cy', String(cy));
+    highlight.setAttribute('cx', String(cx));
+    highlight.setAttribute('cy', String(cy));
     highlight.setAttribute('r', String(INNER_R + 3));
     highlight.setAttribute('fill', 'url(#askbetter-glass-grad)');
     svg.appendChild(highlight);
 
     // Arc track
     const track = document.createElementNS(svgNS, 'circle');
-    track.setAttribute('cx', String(cx)); track.setAttribute('cy', String(cy));
+    track.setAttribute('cx', String(cx));
+    track.setAttribute('cy', String(cy));
     track.setAttribute('r', String(RING_R));
     track.setAttribute('fill', 'none');
     track.setAttribute('stroke', 'rgba(167,139,250,0.20)');
@@ -751,7 +781,8 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
     // Progress arc
     const arc = document.createElementNS(svgNS, 'circle');
     arc.setAttribute('id', 'askbetter-badge-arc');
-    arc.setAttribute('cx', String(cx)); arc.setAttribute('cy', String(cy));
+    arc.setAttribute('cx', String(cx));
+    arc.setAttribute('cy', String(cy));
     arc.setAttribute('r', String(RING_R));
     arc.setAttribute('fill', 'none');
     arc.setAttribute('stroke-width', String(RING_STROKE));
@@ -763,7 +794,8 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
     // Score text
     const text = document.createElementNS(svgNS, 'text');
     text.setAttribute('id', 'askbetter-badge-text');
-    text.setAttribute('x', String(cx)); text.setAttribute('y', String(cy));
+    text.setAttribute('x', String(cx));
+    text.setAttribute('y', String(cy));
     text.setAttribute('text-anchor', 'middle');
     text.setAttribute('dominant-baseline', 'central');
     text.setAttribute('font-size', '11');
@@ -775,21 +807,25 @@ export function renderOverlay(score: LiveScore, inputEl: HTMLElement, platform?:
 
     badge.addEventListener('mouseenter', () => {
       const s = document.getElementById('askbetter-badge-svg');
-      if (s) s.style.filter = `drop-shadow(0 3px 16px ${getScoreColor(currentScore?.overall ?? 0)}88)`;
+      if (s)
+        s.style.filter = `drop-shadow(0 3px 16px ${getScoreColor(currentScore?.overall ?? 0)}88)`;
       showBubbles(badge!);
     });
     badge.addEventListener('mouseleave', (e: MouseEvent) => {
       const s = document.getElementById('askbetter-badge-svg');
-      if (s) s.style.filter = `drop-shadow(0 2px 10px ${getScoreColor(currentScore?.overall ?? 0)}55)`;
+      if (s)
+        s.style.filter = `drop-shadow(0 2px 10px ${getScoreColor(currentScore?.overall ?? 0)}55)`;
       const rel = e.relatedTarget as HTMLElement | null;
       if (rel?.closest(`.${BUBBLE_CLASS}`) || rel?.id === BRIDGE_ID) return;
       hideBubbles();
     });
     document.body.appendChild(badge);
 
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      badge!.style.opacity = '1';
-    }));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        badge!.style.opacity = '1';
+      })
+    );
   }
 
   // Update SVG elements with new score/color
@@ -828,7 +864,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     document.getElementById(BRIDGE_ID)?.remove();
     document.getElementById(BADGE_LABEL_ID)?.remove();
-    document.querySelectorAll<HTMLElement>(`.${BUBBLE_CLASS}`).forEach(b => b.remove());
+    document.querySelectorAll<HTMLElement>(`.${BUBBLE_CLASS}`).forEach((b) => b.remove());
     bubblesVisible = false;
   }
 });

@@ -32,6 +32,7 @@
 npm run dev        # Vite build in watch mode (for development)
 npm run build      # Single production build
 npm run typecheck  # tsc --noEmit, no emit, type errors only
+npm run format     # Prettier — formats src/**/*.ts and popup.html in place
 ```
 
 ## Loading the Extension Locally
@@ -51,3 +52,4 @@ All dependencies are `devDependencies` — nothing ships at runtime except the c
 | `vite` | Build tool |
 | `typescript` | Compiler |
 | `@types/chrome` | Chrome API types |
+| `prettier` | Code formatter (3.5.3 pinned) — config in `.prettierrc`, ignores in `.prettierignore` |

@@ -21,7 +21,8 @@ const PLATFORMS: Record<string, PlatformConfig> = {
   },
   gemini: {
     name: 'Gemini',
-    inputSelector: '.ql-editor, [contenteditable="true"][aria-label*="prompt"], rich-textarea .ql-editor',
+    inputSelector:
+      '.ql-editor, [contenteditable="true"][aria-label*="prompt"], rich-textarea .ql-editor',
     sendButtonSelector: 'button[aria-label="Send message"], .send-button',
   },
   perplexity: {

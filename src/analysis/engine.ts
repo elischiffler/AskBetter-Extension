@@ -6,10 +6,10 @@ import type { PromptIntent } from './types';
 export interface LiveScore {
   overall: number;
   // The four dimensions shown in the UI
-  ownership: number;      // autonomy
-  depth: number;          // curiosity
-  critical: number;       // criticalThinking
-  clarity: number;        // specificity + context averaged
+  ownership: number; // autonomy
+  depth: number; // curiosity
+  critical: number; // criticalThinking
+  clarity: number; // specificity + context averaged
   intent: PromptIntent | 'unknown';
   flags: string[];
   suggestions: string[];
@@ -21,21 +21,119 @@ export interface LiveScore {
 // ---------------------------------------------------------------------------
 
 export const STOP_WORDS = new Set([
-  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-  'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
-  'i', 'me', 'my', 'we', 'our', 'you', 'your', 'it', 'its',
-  'this', 'that', 'these', 'those', 'and', 'or', 'but', 'so', 'yet',
-  'for', 'nor', 'at', 'by', 'from', 'in', 'into', 'of', 'on', 'to',
-  'up', 'with', 'about', 'as', 'if', 'then', 'than', 'because', 'while',
-  'please', 'just', 'really', 'very', 'also', 'too', 'not', 'no',
+  'a',
+  'an',
+  'the',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'have',
+  'has',
+  'had',
+  'do',
+  'does',
+  'did',
+  'will',
+  'would',
+  'could',
+  'should',
+  'may',
+  'might',
+  'shall',
+  'can',
+  'need',
+  'dare',
+  'ought',
+  'i',
+  'me',
+  'my',
+  'we',
+  'our',
+  'you',
+  'your',
+  'it',
+  'its',
+  'this',
+  'that',
+  'these',
+  'those',
+  'and',
+  'or',
+  'but',
+  'so',
+  'yet',
+  'for',
+  'nor',
+  'at',
+  'by',
+  'from',
+  'in',
+  'into',
+  'of',
+  'on',
+  'to',
+  'up',
+  'with',
+  'about',
+  'as',
+  'if',
+  'then',
+  'than',
+  'because',
+  'while',
+  'please',
+  'just',
+  'really',
+  'very',
+  'also',
+  'too',
+  'not',
+  'no',
   // Filler action verbs — not meaningful topic words
-  'write', 'create', 'make', 'generate', 'build', 'fix', 'give', 'help',
-  'explain', 'tell', 'show', 'find', 'get', 'use', 'using',
-  'want', 'need', 'like', 'try', 'trying', 'let', 'go', 'put', 'set',
-  'come', 'take', 'know', 'think', 'look', 'see', 'say', 'said',
+  'write',
+  'create',
+  'make',
+  'generate',
+  'build',
+  'fix',
+  'give',
+  'help',
+  'explain',
+  'tell',
+  'show',
+  'find',
+  'get',
+  'use',
+  'using',
+  'want',
+  'need',
+  'like',
+  'try',
+  'trying',
+  'let',
+  'go',
+  'put',
+  'set',
+  'come',
+  'take',
+  'know',
+  'think',
+  'look',
+  'see',
+  'say',
+  'said',
   // Question words
-  'what', 'why', 'how', 'when', 'where', 'who', 'which',
+  'what',
+  'why',
+  'how',
+  'when',
+  'where',
+  'who',
+  'which',
 ]);
 
 function extractTopic(text: string): string {
@@ -85,7 +183,7 @@ function depthSuggestion(topic: string, intent: PromptIntent | 'unknown'): strin
 
 function criticalSuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
   if (!topic) {
-    return "Ask about edge cases, risks, or alternatives to stress-test the answer.";
+    return 'Ask about edge cases, risks, or alternatives to stress-test the answer.';
   }
   switch (intent) {
     case 'delegation':
@@ -103,7 +201,7 @@ function criticalSuggestion(topic: string, intent: PromptIntent | 'unknown'): st
 
 function claritySuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
   if (!topic) {
-    return "Add context: who is this for, what format do you need, what constraints apply?";
+    return 'Add context: who is this for, what format do you need, what constraints apply?';
   }
   switch (intent) {
     case 'delegation':
@@ -150,9 +248,9 @@ export function analyzePrompt(text: string): LiveScore {
 
   // Map to UI dimensions
   const ownership = quality.autonomy;
-  const depth     = quality.curiosity;
-  const critical  = quality.criticalThinking;
-  const clarity   = Math.round((quality.specificity + quality.context) / 2);
+  const depth = quality.curiosity;
+  const critical = quality.criticalThinking;
+  const clarity = Math.round((quality.specificity + quality.context) / 2);
 
   // Extract up to 3 distinct topic phrases from the prompt — one per suggestion
   // so each tip references a different aspect rather than all repeating the same keyword.
@@ -165,13 +263,17 @@ export function analyzePrompt(text: string): LiveScore {
   type DimEntry = { score: number; suggestion: string };
   const weak: DimEntry[] = [];
 
-  if (ownership < 60) weak.push({ score: ownership, suggestion: ownershipSuggestion(topics[0] ?? topic, intent) });
-  if (depth     < 60) weak.push({ score: depth,     suggestion: depthSuggestion(topics[1] ?? topic, intent) });
-  if (critical  < 60) weak.push({ score: critical,  suggestion: criticalSuggestion(topics[2] ?? topic, intent) });
-  if (clarity   < 60) weak.push({ score: clarity,   suggestion: claritySuggestion(topics[0] ?? topic, intent) });
+  if (ownership < 60)
+    weak.push({ score: ownership, suggestion: ownershipSuggestion(topics[0] ?? topic, intent) });
+  if (depth < 60)
+    weak.push({ score: depth, suggestion: depthSuggestion(topics[1] ?? topic, intent) });
+  if (critical < 60)
+    weak.push({ score: critical, suggestion: criticalSuggestion(topics[2] ?? topic, intent) });
+  if (clarity < 60)
+    weak.push({ score: clarity, suggestion: claritySuggestion(topics[0] ?? topic, intent) });
 
   weak.sort((a, b) => a.score - b.score);
-  const suggestions = weak.slice(0, 3).map(d => d.suggestion);
+  const suggestions = weak.slice(0, 3).map((d) => d.suggestion);
 
   return {
     overall,

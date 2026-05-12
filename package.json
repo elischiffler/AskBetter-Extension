@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" popup.html"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
+    "prettier": "3.5.3",
     "typescript": "~5.8.0",
     "vite": "^6.3.0"
   }

@@ -1,11 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AskBetter</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
       body {
         width: 320px;
         min-height: 200px;
@@ -23,8 +27,12 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
       }
-      .header h1 span { color: #7c3aed; }
-      .content { padding: 16px; }
+      .header h1 span {
+        color: #7c3aed;
+      }
+      .content {
+        padding: 16px;
+      }
       .score-row {
         display: flex;
         justify-content: space-between;
@@ -32,8 +40,15 @@
         padding: 8px 0;
         border-bottom: 1px solid rgba(139, 92, 246, 0.1);
       }
-      .score-label { font-size: 12px; color: #a78bfa; }
-      .score-value { font-size: 14px; font-weight: 700; color: #f5f3ff; }
+      .score-label {
+        font-size: 12px;
+        color: #a78bfa;
+      }
+      .score-value {
+        font-size: 14px;
+        font-weight: 700;
+        color: #f5f3ff;
+      }
       .status {
         padding: 12px;
         margin-top: 12px;
@@ -52,7 +67,9 @@
         color: #7c3aed;
         text-decoration: none;
       }
-      .footer a:hover { color: #a78bfa; }
+      .footer a:hover {
+        color: #a78bfa;
+      }
     </style>
   </head>
   <body>
@@ -65,9 +82,7 @@
       </div>
     </div>
     <div class="footer">
-      <a href="https://ask-better-kiro-hacks.vercel.app" target="_blank">
-        Open Dashboard ↗
-      </a>
+      <a href="https://ask-better-kiro-hacks.vercel.app" target="_blank"> Open Dashboard ↗ </a>
     </div>
     <script src="dist/popup.js" type="module"></script>
   </body>

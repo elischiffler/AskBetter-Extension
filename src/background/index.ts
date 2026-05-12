@@ -101,7 +101,10 @@ function clamp(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-async function fetchOllamaScore(text: string, heuristic?: HeuristicContext): Promise<Partial<LiveScore> | null> {
+async function fetchOllamaScore(
+  text: string,
+  heuristic?: HeuristicContext
+): Promise<Partial<LiveScore> | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -154,7 +157,7 @@ Use the key topics and weak dimensions above to write suggestions that are speci
     console.log(`[AskBetter:bg] Ollama HTTP status: ${res.status} (${Date.now() - t0}ms)`);
     if (!res.ok) return null;
 
-    const data = await res.json() as { response?: string };
+    const data = (await res.json()) as { response?: string };
     console.log('[AskBetter:bg] Raw Ollama response:', data.response?.slice(0, 300));
 
     const raw = data.response?.trim() ?? '';
@@ -166,8 +169,13 @@ Use the key topics and weak dimensions above to write suggestions that are speci
 
     console.log('[AskBetter:bg] Extracted JSON:', jsonMatch[0]);
     const parsed = JSON.parse(jsonMatch[0]) as {
-      ownership?: number; depth?: number; critical?: number; clarity?: number;
-      overall?: number; intent?: string; suggestions?: unknown[];
+      ownership?: number;
+      depth?: number;
+      critical?: number;
+      clarity?: number;
+      overall?: number;
+      intent?: string;
+      suggestions?: unknown[];
     };
 
     if (
@@ -181,13 +189,17 @@ Use the key topics and weak dimensions above to write suggestions that are speci
     }
 
     const ownership = clamp(parsed.ownership);
-    const depth     = clamp(parsed.depth);
-    const critical  = clamp(parsed.critical);
-    const clarity   = clamp(parsed.clarity);
-    const overall   = clamp(parsed.overall ?? Math.round((ownership + depth + critical + clarity) / 4));
+    const depth = clamp(parsed.depth);
+    const critical = clamp(parsed.critical);
+    const clarity = clamp(parsed.clarity);
+    const overall = clamp(
+      parsed.overall ?? Math.round((ownership + depth + critical + clarity) / 4)
+    );
 
     const validIntents = new Set(['delegation', 'curiosity', 'collaborative', 'verification']);
-    const intent = validIntents.has(parsed.intent ?? '') ? parsed.intent as LiveScore['intent'] : 'unknown';
+    const intent = validIntents.has(parsed.intent ?? '')
+      ? (parsed.intent as LiveScore['intent'])
+      : 'unknown';
 
     const suggestions = Array.isArray(parsed.suggestions)
       ? parsed.suggestions.filter((s): s is string => typeof s === 'string').slice(0, 3)
@@ -197,7 +209,10 @@ Use the key topics and weak dimensions above to write suggestions that are speci
     console.log('[AskBetter:bg] Ollama score parsed successfully:', result);
     return result;
   } catch (err) {
-    console.log('[AskBetter:bg] Ollama fetch error:', err instanceof Error ? `${err.name}: ${err.message}` : err);
+    console.log(
+      '[AskBetter:bg] Ollama fetch error:',
+      err instanceof Error ? `${err.name}: ${err.message}` : err
+    );
     return null;
   } finally {
     clearTimeout(timer);
@@ -228,7 +243,7 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
   if (message.type === 'OLLAMA_SCORE') {
     // Proxy the Ollama fetch and return the result asynchronously
-    fetchOllamaScore(message.text, message.heuristic).then(score => {
+    fetchOllamaScore(message.text, message.heuristic).then((score) => {
       sendResponse({ score });
     });
     return true; // keep message channel open for async response

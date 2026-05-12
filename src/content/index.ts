@@ -5,7 +5,14 @@
 
 import { detectPlatform, findInputElement, getInputText } from './selectors';
 import { analyzePrompt, STOP_WORDS } from '../analysis/engine';
-import { renderOverlay, hideOverlay, setBadgeLoading, renderFeedback, hideFeedback, attachInputBarHover } from './overlay';
+import {
+  renderOverlay,
+  hideOverlay,
+  setBadgeLoading,
+  renderFeedback,
+  hideFeedback,
+  attachInputBarHover,
+} from './overlay';
 import { scoreWithOllama } from '../analysis/ollama';
 import { extractTopicsTFIDF } from '../analysis/tfidf';
 
@@ -13,7 +20,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let ollamaTimer: ReturnType<typeof setTimeout> | null = null;
 let pulseTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 300;
-const PULSE_DELAY_MS = 600;  // delay after heuristic before pulse starts
+const PULSE_DELAY_MS = 600; // delay after heuristic before pulse starts
 const OLLAMA_EXTRA_MS = 1200; // additional wait after heuristic fires before hitting Ollama (total = 1500ms from last keystroke)
 
 function safeSendMessage(message: object): void {
@@ -63,7 +70,7 @@ function textSimilarity(a: string, b: string): number {
   for (const [bg, count] of aMap) {
     intersection += Math.min(count, bMap.get(bg) ?? 0);
   }
-  const total = (a.length - 1) + (b.length - 1);
+  const total = a.length - 1 + (b.length - 1);
   return total === 0 ? 0 : (2 * intersection) / total;
 }
 
@@ -77,7 +84,7 @@ function blendScore(heuristic: number, ai: number, similarity: number): number {
 
 function blendWithAiScore(
   heuristic: ReturnType<typeof analyzePrompt>,
-  currentText: string,
+  currentText: string
 ): ReturnType<typeof analyzePrompt> {
   if (!lastAiScore) return heuristic;
 
@@ -90,11 +97,11 @@ function blendWithAiScore(
 
   return {
     ...heuristic,
-    overall:   blendScore(heuristic.overall,   lastAiScore.overall,   similarity),
+    overall: blendScore(heuristic.overall, lastAiScore.overall, similarity),
     ownership: blendScore(heuristic.ownership, lastAiScore.ownership, similarity),
-    depth:     blendScore(heuristic.depth,     lastAiScore.depth,     similarity),
-    critical:  blendScore(heuristic.critical,  lastAiScore.critical,  similarity),
-    clarity:   blendScore(heuristic.clarity,   lastAiScore.clarity,   similarity),
+    depth: blendScore(heuristic.depth, lastAiScore.depth, similarity),
+    critical: blendScore(heuristic.critical, lastAiScore.critical, similarity),
+    clarity: blendScore(heuristic.clarity, lastAiScore.clarity, similarity),
   };
 }
 
@@ -109,14 +116,23 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
   const currentText = getInputText(el);
   if (currentText !== lastScoredText) {
     // Cancel pulse immediately if the user resumes typing
-    if (pulseTimer) { clearTimeout(pulseTimer); pulseTimer = null; }
+    if (pulseTimer) {
+      clearTimeout(pulseTimer);
+      pulseTimer = null;
+    }
     setBadgeLoading(false);
     hideFeedback();
   }
 
   debounceTimer = setTimeout(() => {
     const text = getInputText(el);
-    console.log('[AskBetter] input change, text length:', text.length, 'trimmed:', text.trim().length, JSON.stringify(text.slice(0, 50)));
+    console.log(
+      '[AskBetter] input change, text length:',
+      text.length,
+      'trimmed:',
+      text.trim().length,
+      JSON.stringify(text.slice(0, 50))
+    );
 
     if (text.trim().length < 5) {
       lastScoredText = '';
@@ -155,7 +171,7 @@ async function scheduleOllamaScore(
   displayScore: ReturnType<typeof analyzePrompt>,
   el: HTMLElement,
   platform: ReturnType<typeof detectPlatform>,
-  gen: number,
+  gen: number
 ): Promise<void> {
   console.log('[AskBetter] Ollama scoring started');
 
@@ -196,7 +212,9 @@ async function scheduleOllamaScore(
   setBadgeLoading(false);
 
   if (!aiScore) {
-    console.log('[AskBetter] Ollama unavailable or returned invalid response — falling back to heuristic suggestions');
+    console.log(
+      '[AskBetter] Ollama unavailable or returned invalid response — falling back to heuristic suggestions'
+    );
     // Ollama not running — still show heuristic suggestions so pills aren't empty
     renderFeedback(heuristicScore.suggestions, heuristicScore, el, platform ?? undefined);
     return;
@@ -221,13 +239,14 @@ async function scheduleOllamaScore(
     ...heuristicScore,
     ...aiScore,
     ownership: softFloor(aiScore.ownership ?? heuristicScore.ownership, ds.ownership),
-    depth:     softFloor(aiScore.depth     ?? heuristicScore.depth,     ds.depth),
-    critical:  softFloor(aiScore.critical  ?? heuristicScore.critical,  ds.critical),
-    clarity:   softFloor(aiScore.clarity   ?? heuristicScore.clarity,   ds.clarity),
-    overall:   softFloor(aiScore.overall   ?? heuristicScore.overall,   ds.overall),
-    suggestions: (aiScore.suggestions && aiScore.suggestions.length > 0)
-      ? aiScore.suggestions
-      : heuristicScore.suggestions,
+    depth: softFloor(aiScore.depth ?? heuristicScore.depth, ds.depth),
+    critical: softFloor(aiScore.critical ?? heuristicScore.critical, ds.critical),
+    clarity: softFloor(aiScore.clarity ?? heuristicScore.clarity, ds.clarity),
+    overall: softFloor(aiScore.overall ?? heuristicScore.overall, ds.overall),
+    suggestions:
+      aiScore.suggestions && aiScore.suggestions.length > 0
+        ? aiScore.suggestions
+        : heuristicScore.suggestions,
   };
 
   console.log('[AskBetter] Ollama score received:', merged.overall);
