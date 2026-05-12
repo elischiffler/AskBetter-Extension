@@ -1,5 +1,9 @@
 import type { PromptIntent, QualityScores } from './types';
 
+// ---------------------------------------------------------------------------
+// Signal lists — used by both flag detection and excellence scoring
+// ---------------------------------------------------------------------------
+
 const LEARNING_INTENT_SIGNALS = [
   'explain',
   'why',
@@ -97,8 +101,205 @@ const BARE_DELEGATION_PHRASES = [
   'make it less',
 ];
 
+// ---------------------------------------------------------------------------
+// Utility
+// ---------------------------------------------------------------------------
+
 function hasAny(lower: string, signals: string[]): boolean {
   return signals.some((s) => lower.includes(s));
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+// ---------------------------------------------------------------------------
+// Base scores — starting values before any bonuses or penalties
+// ---------------------------------------------------------------------------
+
+type MutableScores = {
+  autonomy: number;
+  curiosity: number;
+  criticalThinking: number;
+  specificity: number;
+  context: number;
+};
+
+function computeBaseScores(wordCount: number): MutableScores {
+  const isShort = wordCount < 10;
+  const isMedium = wordCount >= 10 && wordCount < 20;
+
+  return {
+    autonomy: isShort ? 25 : isMedium ? 35 : 45,
+    curiosity: isShort ? 25 : isMedium ? 35 : 45,
+    criticalThinking: isShort ? 25 : isMedium ? 35 : 45,
+    specificity: isShort ? 15 : isMedium ? 25 : 35,
+    context: isShort ? 15 : isMedium ? 25 : 35,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Flag bonuses — positive adjustments driven by detected flags
+// ---------------------------------------------------------------------------
+
+function applyFlagBonuses(scores: MutableScores, flags: string[]): void {
+  if (flags.includes('delegation_with_learning_intent')) {
+    scores.autonomy += 10;
+    scores.curiosity += 15;
+    scores.criticalThinking += 10;
+  }
+  if (flags.includes('shows_prior_attempt')) {
+    scores.autonomy += 25;
+    scores.context += 10;
+    scores.specificity += 10;
+  }
+  if (flags.includes('asks_for_reasoning')) {
+    scores.curiosity += 20;
+    scores.criticalThinking += 10;
+  }
+  if (flags.includes('asks_for_alternatives')) {
+    scores.criticalThinking += 15;
+    scores.curiosity += 10;
+  }
+  if (flags.includes('asks_for_risk_or_limitations')) {
+    scores.criticalThinking += 25;
+    scores.autonomy += 10;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Intent bonuses — positive adjustments driven by detected intent
+// ---------------------------------------------------------------------------
+
+function applyIntentBonuses(scores: MutableScores, intent: PromptIntent, wordCount: number): void {
+  if (intent === 'verification') {
+    scores.criticalThinking += 15;
+  }
+  if (intent === 'collaborative') {
+    scores.autonomy += 10;
+    scores.criticalThinking += 10;
+  }
+  // Curiosity boost is reduced for short prompts — a one-liner "why is X weird?"
+  // shows intent but not depth; the full boost requires some context.
+  if (intent === 'curiosity') {
+    scores.curiosity += wordCount >= 15 ? 15 : 5;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Penalties — negative adjustments for weak or problematic prompts
+// ---------------------------------------------------------------------------
+
+function applyPenalties(
+  scores: MutableScores,
+  flags: string[],
+  intent: PromptIntent,
+  wordCount: number,
+  text: string,
+  firstPart: string
+): void {
+  // Context signal check — scan the first 40% of the text (setup/framing region).
+  // Signals buried deep in a paste body are incidental, not intentional framing.
+  if (CONTEXT_SIGNALS.some((s) => firstPart.includes(s))) {
+    scores.specificity += 18;
+    scores.context += 18;
+  }
+
+  if (wordCount >= 20 && wordCount <= 120) {
+    scores.specificity += 10;
+  }
+
+  if (wordCount < 6) {
+    scores.specificity -= 25;
+    scores.context -= 20;
+  }
+
+  // Long unstructured delegation — wall of text with no question or structure signals
+  if (wordCount > 120 && !text.includes('?') && intent === 'delegation') {
+    const hasStructure =
+      flags.includes('asks_for_risk_or_limitations') ||
+      flags.includes('asks_for_alternatives') ||
+      flags.includes('delegation_with_learning_intent') ||
+      CONTEXT_SIGNALS.some((s) => firstPart.includes(s));
+    if (!hasStructure) {
+      scores.curiosity -= 15;
+      scores.autonomy -= 10;
+    }
+  }
+
+  // Short delegation — soften penalty if the prompt at least names a topic
+  if (intent === 'delegation' && wordCount < 15) {
+    const hasTopic = wordCount >= 6;
+    scores.autonomy -= hasTopic ? 15 : 25;
+    scores.curiosity -= hasTopic ? 10 : 15;
+    scores.criticalThinking -= 10;
+  }
+
+  if (flags.includes('copy_paste_without_question')) {
+    scores.autonomy -= 15;
+    scores.curiosity -= 15;
+  }
+
+  if (flags.includes('bare_delegation_no_context') && wordCount < 15) {
+    scores.specificity -= 25;
+    scores.autonomy -= 15;
+  }
+
+  // Very short prompts with no redeeming signals
+  if (
+    wordCount < 10 &&
+    !flags.includes('shows_prior_attempt') &&
+    !flags.includes('asks_for_reasoning') &&
+    !flags.includes('delegation_with_learning_intent')
+  ) {
+    scores.specificity -= 10;
+    scores.context -= 10;
+  }
+
+  // No question mark — mild curiosity and specificity penalty
+  if (!text.includes('?')) {
+    scores.curiosity -= 10;
+    scores.specificity -= 5;
+  }
+
+  // Extremely short prompts with no flags at all
+  if (wordCount <= 4 && flags.length === 0) {
+    scores.autonomy -= 15;
+    scores.curiosity -= 15;
+    scores.criticalThinking -= 15;
+    scores.specificity -= 15;
+    scores.context -= 15;
+  }
+
+  if (wordCount <= 1) {
+    scores.autonomy -= 20;
+    scores.curiosity -= 20;
+    scores.criticalThinking -= 20;
+    scores.specificity -= 20;
+    scores.context -= 20;
+  }
+
+  // Truly minimal delegation (1-5 words) with no redeeming signals
+  if (
+    intent === 'delegation' &&
+    !flags.includes('delegation_with_learning_intent') &&
+    !flags.includes('shows_prior_attempt') &&
+    !flags.includes('asks_for_reasoning') &&
+    wordCount < 6
+  ) {
+    scores.autonomy -= 15;
+    scores.curiosity -= 10;
+  }
+
+  // No context signals and no prior attempt — mild context/specificity penalty
+  if (
+    wordCount >= 5 &&
+    !CONTEXT_SIGNALS.some((s) => firstPart.includes(s)) &&
+    !flags.includes('shows_prior_attempt')
+  ) {
+    scores.context -= 10;
+    scores.specificity -= 5;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,10 +307,7 @@ function hasAny(lower: string, signals: string[]): boolean {
 //
 // Each intent has a set of signals that define what doing it *well* looks like.
 // We count how many excellence signals the prompt hits, then apply a graduated
-// bonus to the dimensions that matter most for that intent.
-//
-// This replaces ad-hoc per-scenario boosts with a general principle:
-// "the better you play to your intent, the higher your relevant scores."
+// bonus (up to +25 pts) to the dimensions that matter most for that intent.
 // ---------------------------------------------------------------------------
 
 interface ExcellenceResult {
@@ -119,7 +317,7 @@ interface ExcellenceResult {
   bonuses: Partial<Record<keyof QualityScores, number>>;
 }
 
-function scoreIntentExcellence(
+function computeExcellenceBonus(
   lower: string,
   flags: string[],
   intent: PromptIntent,
@@ -130,8 +328,8 @@ function scoreIntentExcellence(
   const bonuses: Partial<Record<keyof QualityScores, number>> = {};
 
   if (intent === 'delegation') {
-    // Excellence signals for delegation: clear role/task framing, constraints,
-    // format spec, risk/edge case request, sufficient length, audience spec.
+    // Excellence signals: clear role/task framing, constraints, format spec,
+    // risk/edge case request, sufficient length, audience spec.
     total = 6;
     if (
       lower.includes('you are') ||
@@ -162,15 +360,14 @@ function scoreIntentExcellence(
     )
       hits++;
 
-    // Reward dimensions that matter for delegation excellence
     const bonus = Math.round((hits / total) * 25);
     bonuses.autonomy = bonus;
     bonuses.criticalThinking = Math.round(bonus * 0.8);
     bonuses.specificity = Math.round(bonus * 0.8);
     bonuses.context = Math.round(bonus * 0.8);
   } else if (intent === 'curiosity') {
-    // Excellence signals for curiosity: asks why/how, probes mechanisms,
-    // shows prior understanding, scopes the question, asks for examples.
+    // Excellence signals: asks why/how, probes mechanisms, shows prior
+    // understanding, scopes the question, asks for examples.
     total = 5;
     if (
       lower.includes('why') ||
@@ -208,8 +405,8 @@ function scoreIntentExcellence(
     bonuses.curiosity = bonus;
     bonuses.autonomy = Math.round(bonus * 0.6);
   } else if (intent === 'collaborative') {
-    // Excellence signals for collaborative: shares own view, invites pushback,
-    // frames a decision, acknowledges tradeoffs, asks for opinion.
+    // Excellence signals: shares own view, invites pushback, frames a
+    // decision, acknowledges tradeoffs, asks for opinion.
     total = 5;
     if (
       lower.includes('i think') ||
@@ -251,8 +448,8 @@ function scoreIntentExcellence(
     bonuses.curiosity = Math.round(bonus * 0.8);
     bonuses.criticalThinking = Math.round(bonus * 0.6);
   } else if (intent === 'verification') {
-    // Excellence signals for verification: shares the artifact, states expected
-    // behaviour, asks about edge cases, provides context for the review.
+    // Excellence signals: shares the artifact, states expected behaviour,
+    // asks about edge cases, provides context for the review.
     total = 5;
     if (
       flags.includes('shows_prior_attempt') ||
@@ -293,6 +490,10 @@ function scoreIntentExcellence(
   return { ratio: total > 0 ? hits / total : 0, bonuses };
 }
 
+// ---------------------------------------------------------------------------
+// Flag detection
+// ---------------------------------------------------------------------------
+
 export function detectFlags(text: string): string[] {
   const lower = text.toLowerCase();
   const words = lower.split(/\s+/).filter(Boolean);
@@ -321,6 +522,7 @@ export function detectFlags(text: string): string[] {
     lower.includes('format') ||
     lower.includes('bullet') ||
     lower.includes('section');
+
   if (wordCount > 100 && !text.includes('?') && !hasStructureSignals) {
     flags.push('copy_paste_without_question');
   }
@@ -328,9 +530,9 @@ export function detectFlags(text: string): string[] {
   return flags;
 }
 
-function clamp(value: number): number {
-  return Math.max(0, Math.min(100, value));
-}
+// ---------------------------------------------------------------------------
+// Quality scoring — composes all the steps above
+// ---------------------------------------------------------------------------
 
 export function scorePromptQuality(
   text: string,
@@ -339,172 +541,43 @@ export function scorePromptQuality(
 ): QualityScores {
   const lower = text.toLowerCase();
   const wordCount = text.split(/\s+/).filter(Boolean).length;
-
-  const isShort = wordCount < 10;
-  const isMedium = wordCount >= 10 && wordCount < 20;
-
-  let autonomy = isShort ? 25 : isMedium ? 35 : 45;
-  let curiosity = isShort ? 25 : isMedium ? 35 : 45;
-  let criticalThinking = isShort ? 25 : isMedium ? 35 : 45;
-  let specificity = isShort ? 15 : isMedium ? 25 : 35;
-  let context = isShort ? 15 : isMedium ? 25 : 35;
-  const iteration = 50;
-
-  if (flags.includes('delegation_with_learning_intent')) {
-    autonomy += 10;
-    curiosity += 15;
-    criticalThinking += 10;
-  }
-  if (flags.includes('shows_prior_attempt')) {
-    autonomy += 25;
-    context += 10;
-    specificity += 10;
-  }
-  if (flags.includes('asks_for_reasoning')) {
-    curiosity += 20;
-    criticalThinking += 10;
-  }
-  if (flags.includes('asks_for_alternatives')) {
-    criticalThinking += 15;
-    curiosity += 10;
-  }
-  if (flags.includes('asks_for_risk_or_limitations')) {
-    criticalThinking += 25;
-    autonomy += 10;
-  }
-
-  if (intent === 'verification') {
-    criticalThinking += 15;
-  }
-  if (intent === 'collaborative') {
-    autonomy += 10;
-    criticalThinking += 10;
-  }
-  // Curiosity boost is reduced for short prompts — a one-liner "why is X weird?"
-  // shows intent but not depth; the full boost requires some context.
-  if (intent === 'curiosity') {
-    curiosity += wordCount >= 15 ? 15 : 5;
-  }
-
-  // Context signal check — scan the first 40% of the text (setup/framing region).
-  // Signals buried deep in a paste body are incidental, not intentional framing.
+  // Scan only the first 40% of the text for context signals — signals buried
+  // deep in a paste body are incidental, not intentional framing.
   const firstPart = lower.slice(0, Math.ceil(lower.length * 0.4));
-  if (CONTEXT_SIGNALS.some((s) => firstPart.includes(s))) {
-    specificity += 18;
-    context += 18;
-  }
 
-  if (wordCount >= 20 && wordCount <= 120) {
-    specificity += 10;
-  }
-  if (wordCount < 6) {
-    specificity -= 25;
-    context -= 20;
-  }
-  if (wordCount > 120 && !text.includes('?') && intent === 'delegation') {
-    const hasStructure =
-      flags.includes('asks_for_risk_or_limitations') ||
-      flags.includes('asks_for_alternatives') ||
-      flags.includes('delegation_with_learning_intent') ||
-      CONTEXT_SIGNALS.some((s) => firstPart.includes(s));
-    if (!hasStructure) {
-      curiosity -= 15;
-      autonomy -= 10;
-    }
-  }
-
-  if (intent === 'delegation' && wordCount < 15) {
-    // Soften penalty if the prompt at least names a specific topic/technology
-    // (word count 6-14 with some content is a basic but valid ask)
-    const hasTopic = wordCount >= 6;
-    autonomy -= hasTopic ? 15 : 25;
-    curiosity -= hasTopic ? 10 : 15;
-    criticalThinking -= 10;
-  }
-  if (flags.includes('copy_paste_without_question')) {
-    autonomy -= 15;
-    curiosity -= 15;
-  }
-  if (flags.includes('bare_delegation_no_context') && wordCount < 15) {
-    specificity -= 25;
-    autonomy -= 15;
-  }
-
-  if (
-    wordCount < 10 &&
-    !flags.includes('shows_prior_attempt') &&
-    !flags.includes('asks_for_reasoning') &&
-    !flags.includes('delegation_with_learning_intent')
-  ) {
-    specificity -= 10;
-    context -= 10;
-  }
-
-  if (!text.includes('?')) {
-    curiosity -= 10;
-    specificity -= 5;
-  }
-
-  if (wordCount <= 4 && flags.length === 0) {
-    autonomy -= 15;
-    curiosity -= 15;
-    criticalThinking -= 15;
-    specificity -= 15;
-    context -= 15;
-  }
-  if (wordCount <= 1) {
-    autonomy -= 20;
-    curiosity -= 20;
-    criticalThinking -= 20;
-    specificity -= 20;
-    context -= 20;
-  }
-
-  if (
-    intent === 'delegation' &&
-    !flags.includes('delegation_with_learning_intent') &&
-    !flags.includes('shows_prior_attempt') &&
-    !flags.includes('asks_for_reasoning') &&
-    wordCount < 10 &&
-    wordCount < 6 // only fire for truly minimal prompts (1-5 words), not basic asks
-  ) {
-    autonomy -= 15;
-    curiosity -= 10;
-  }
-
-  if (
-    wordCount >= 5 &&
-    !CONTEXT_SIGNALS.some((s) => firstPart.includes(s)) &&
-    !flags.includes('shows_prior_attempt')
-  ) {
-    context -= 10;
-    specificity -= 5;
-  }
+  const scores = computeBaseScores(wordCount);
+  applyFlagBonuses(scores, flags);
+  applyIntentBonuses(scores, intent, wordCount);
+  applyPenalties(scores, flags, intent, wordCount, text, firstPart);
 
   // Apply intent excellence bonuses — rewards prompts that play strongly
   // to their detected intent rather than one-off scenario boosts.
-  const excellence = scoreIntentExcellence(lower, flags, intent, wordCount);
-  if (excellence.bonuses.autonomy) autonomy += excellence.bonuses.autonomy;
-  if (excellence.bonuses.curiosity) curiosity += excellence.bonuses.curiosity;
-  if (excellence.bonuses.criticalThinking) criticalThinking += excellence.bonuses.criticalThinking;
-  if (excellence.bonuses.specificity) specificity += excellence.bonuses.specificity;
-  if (excellence.bonuses.context) context += excellence.bonuses.context;
+  const excellence = computeExcellenceBonus(lower, flags, intent, wordCount);
+  scores.autonomy += excellence.bonuses.autonomy ?? 0;
+  scores.curiosity += excellence.bonuses.curiosity ?? 0;
+  scores.criticalThinking += excellence.bonuses.criticalThinking ?? 0;
+  scores.specificity += excellence.bonuses.specificity ?? 0;
+  scores.context += excellence.bonuses.context ?? 0;
 
-  // For high-excellence prompts, lift the no-? curiosity penalty — a prompt
-  // that nails its intent doesn't need question marks to prove depth.
+  // High-excellence prompts don't need question marks to prove depth —
+  // restore most of the no-? curiosity penalty for imperative framing.
   if (excellence.ratio >= 0.6 && !text.includes('?')) {
-    curiosity += 10; // restore most of the -10 penalty
+    scores.curiosity += 10;
   }
 
   return {
-    autonomy: clamp(autonomy),
-    curiosity: clamp(curiosity),
-    criticalThinking: clamp(criticalThinking),
-    specificity: clamp(specificity),
-    context: clamp(context),
-    iteration,
+    autonomy: clamp(scores.autonomy),
+    curiosity: clamp(scores.curiosity),
+    criticalThinking: clamp(scores.criticalThinking),
+    specificity: clamp(scores.specificity),
+    context: clamp(scores.context),
+    iteration: 50,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Weighted quality score
+// ---------------------------------------------------------------------------
 
 export function computeQualityScore(q: QualityScores, intent?: PromptIntent): number {
   // Exclude iteration from the real-time score since it's fixed at 50.
@@ -528,7 +601,7 @@ export function computeQualityScore(q: QualityScores, intent?: PromptIntent): nu
         q.context * 0.15
     );
   }
-  // Default: equal weights
+  // Default: equal weights across all five dimensions
   return Math.round(
     (q.autonomy + q.curiosity + q.criticalThinking + q.specificity + q.context) / 5
   );

@@ -1,7 +1,11 @@
 import { scoreIntents, primaryIntentFrom } from './classifier';
 import { detectFlags, scorePromptQuality, computeQualityScore } from './rubric';
 import { extractTopicTFIDF, extractTopicsTFIDF } from './tfidf';
+import { STOP_WORDS } from './stopWords';
 import type { PromptIntent } from './types';
+
+// Re-export so existing imports from engine.ts keep working
+export { STOP_WORDS };
 
 export interface LiveScore {
   overall: number;
@@ -16,139 +20,13 @@ export interface LiveScore {
 }
 
 // ---------------------------------------------------------------------------
-// Topic extraction — delegates to TF-IDF scorer in tfidf.ts.
-// Stop words are defined here (shared with rubric signals) and passed in.
-// ---------------------------------------------------------------------------
-
-export const STOP_WORDS = new Set([
-  'a',
-  'an',
-  'the',
-  'is',
-  'are',
-  'was',
-  'were',
-  'be',
-  'been',
-  'being',
-  'have',
-  'has',
-  'had',
-  'do',
-  'does',
-  'did',
-  'will',
-  'would',
-  'could',
-  'should',
-  'may',
-  'might',
-  'shall',
-  'can',
-  'need',
-  'dare',
-  'ought',
-  'i',
-  'me',
-  'my',
-  'we',
-  'our',
-  'you',
-  'your',
-  'it',
-  'its',
-  'this',
-  'that',
-  'these',
-  'those',
-  'and',
-  'or',
-  'but',
-  'so',
-  'yet',
-  'for',
-  'nor',
-  'at',
-  'by',
-  'from',
-  'in',
-  'into',
-  'of',
-  'on',
-  'to',
-  'up',
-  'with',
-  'about',
-  'as',
-  'if',
-  'then',
-  'than',
-  'because',
-  'while',
-  'please',
-  'just',
-  'really',
-  'very',
-  'also',
-  'too',
-  'not',
-  'no',
-  // Filler action verbs — not meaningful topic words
-  'write',
-  'create',
-  'make',
-  'generate',
-  'build',
-  'fix',
-  'give',
-  'help',
-  'explain',
-  'tell',
-  'show',
-  'find',
-  'get',
-  'use',
-  'using',
-  'want',
-  'need',
-  'like',
-  'try',
-  'trying',
-  'let',
-  'go',
-  'put',
-  'set',
-  'come',
-  'take',
-  'know',
-  'think',
-  'look',
-  'see',
-  'say',
-  'said',
-  // Question words
-  'what',
-  'why',
-  'how',
-  'when',
-  'where',
-  'who',
-  'which',
-]);
-
-function extractTopic(text: string): string {
-  return extractTopicTFIDF(text, STOP_WORDS);
-}
-
-// ---------------------------------------------------------------------------
-// Personalised suggestion builders — each takes the topic + intent so the
-// copy references what the user actually typed.
+// Personalised suggestion builders
+// Each takes the extracted topic + detected intent so the copy references
+// what the user actually typed rather than generic advice.
 // ---------------------------------------------------------------------------
 
 function ownershipSuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
-  if (!topic) {
-    return "Share what you've already tried or thought about.";
-  }
+  if (!topic) return "Share what you've already tried or thought about.";
   switch (intent) {
     case 'delegation':
       return `What have you already tried for "${topic}"? Share it so the answer builds on your work.`;
@@ -164,9 +42,7 @@ function ownershipSuggestion(topic: string, intent: PromptIntent | 'unknown'): s
 }
 
 function depthSuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
-  if (!topic) {
-    return "Ask 'why' or 'how' to get a deeper answer, not just a surface result.";
-  }
+  if (!topic) return "Ask 'why' or 'how' to get a deeper answer, not just a surface result.";
   switch (intent) {
     case 'delegation':
       return `Ask why "${topic}" works the way it does — you'll understand the output, not just receive it.`;
@@ -182,9 +58,7 @@ function depthSuggestion(topic: string, intent: PromptIntent | 'unknown'): strin
 }
 
 function criticalSuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
-  if (!topic) {
-    return 'Ask about edge cases, risks, or alternatives to stress-test the answer.';
-  }
+  if (!topic) return 'Ask about edge cases, risks, or alternatives to stress-test the answer.';
   switch (intent) {
     case 'delegation':
       return `Ask what could go wrong with "${topic}", or request an alternative approach.`;
@@ -200,9 +74,8 @@ function criticalSuggestion(topic: string, intent: PromptIntent | 'unknown'): st
 }
 
 function claritySuggestion(topic: string, intent: PromptIntent | 'unknown'): string {
-  if (!topic) {
+  if (!topic)
     return 'Add context: who is this for, what format do you need, what constraints apply?';
-  }
   switch (intent) {
     case 'delegation':
       return `Specify the constraints for "${topic}" — audience, format, length, or tech stack.`;
@@ -246,43 +119,43 @@ export function analyzePrompt(text: string): LiveScore {
   const quality = scorePromptQuality(trimmed, flags, intent);
   const overall = computeQualityScore(quality, intent);
 
-  // Map to UI dimensions
+  // Map internal quality dimensions to UI dimensions
   const ownership = quality.autonomy;
   const depth = quality.curiosity;
   const critical = quality.criticalThinking;
   const clarity = Math.round((quality.specificity + quality.context) / 2);
 
-  // Extract up to 3 distinct topic phrases from the prompt — one per suggestion
-  // so each tip references a different aspect rather than all repeating the same keyword.
+  // Extract up to 3 distinct topic phrases — one per suggestion so each tip
+  // references a different aspect of the prompt rather than repeating the same keyword.
   const topics = extractTopicsTFIDF(trimmed, STOP_WORDS, 3);
-  const topic = topics[0] ?? extractTopic(trimmed); // fallback for single-topic use
+  const fallbackTopic = topics[0] ?? extractTopicTFIDF(trimmed, STOP_WORDS);
 
-  // Build personalised suggestions for the weakest dimensions.
-  // Collect all weak dims sorted by score ascending so the most critical
-  // issues surface first.
+  // --- Weak dimension collection ---
+  // Collect dimensions scoring below 60, sorted ascending so the most critical
+  // issues surface first. Each gets a different topic phrase for variety.
   type DimEntry = { score: number; suggestion: string };
   const weak: DimEntry[] = [];
 
   if (ownership < 60)
-    weak.push({ score: ownership, suggestion: ownershipSuggestion(topics[0] ?? topic, intent) });
+    weak.push({
+      score: ownership,
+      suggestion: ownershipSuggestion(topics[0] ?? fallbackTopic, intent),
+    });
   if (depth < 60)
-    weak.push({ score: depth, suggestion: depthSuggestion(topics[1] ?? topic, intent) });
+    weak.push({ score: depth, suggestion: depthSuggestion(topics[1] ?? fallbackTopic, intent) });
   if (critical < 60)
-    weak.push({ score: critical, suggestion: criticalSuggestion(topics[2] ?? topic, intent) });
+    weak.push({
+      score: critical,
+      suggestion: criticalSuggestion(topics[2] ?? fallbackTopic, intent),
+    });
   if (clarity < 60)
-    weak.push({ score: clarity, suggestion: claritySuggestion(topics[0] ?? topic, intent) });
+    weak.push({
+      score: clarity,
+      suggestion: claritySuggestion(topics[0] ?? fallbackTopic, intent),
+    });
 
   weak.sort((a, b) => a.score - b.score);
   const suggestions = weak.slice(0, 3).map((d) => d.suggestion);
 
-  return {
-    overall,
-    ownership,
-    depth,
-    critical,
-    clarity,
-    intent,
-    flags,
-    suggestions,
-  };
+  return { overall, ownership, depth, critical, clarity, intent, flags, suggestions };
 }

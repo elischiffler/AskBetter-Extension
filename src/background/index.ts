@@ -1,13 +1,17 @@
 // ---------------------------------------------------------------------------
 // Background service worker
 // Handles communication between content scripts and the popup.
-// The background worker proxies Ollama requests — content scripts on https://
-// pages cannot make http:// requests directly (mixed-content block), but the
-// background service worker has no such restriction.
+// Proxies Ollama requests — content scripts on https:// pages cannot make
+// http:// requests directly (mixed-content block), but the background worker
+// has no such restriction.
 // ---------------------------------------------------------------------------
 
 import type { LiveScore } from '../analysis/engine';
 import type { HeuristicContext } from '../analysis/ollama';
+
+// ---------------------------------------------------------------------------
+// Message types
+// ---------------------------------------------------------------------------
 
 interface ScoreMessage {
   type: 'SCORE_UPDATE';
@@ -28,17 +32,17 @@ interface OllamaRequest {
 
 type Message = ScoreMessage | PromptMessage | OllamaRequest;
 
-// Store the latest score for the popup to read
-let latestScore: LiveScore | null = null;
-
 // ---------------------------------------------------------------------------
-// Ollama proxy — runs here so http://localhost calls aren't blocked by the
-// mixed-content policy that applies to content scripts on https:// pages.
+// Ollama config
 // ---------------------------------------------------------------------------
 
 const OLLAMA_URL = 'http://localhost:11434/api/generate';
 const MODEL = 'llama3.2';
 const TIMEOUT_MS = 30_000; // llama3.2 can be slow on first inference
+
+// ---------------------------------------------------------------------------
+// Ollama system prompt
+// ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = `You are an expert at evaluating the quality of prompts sent to AI assistants.
 Score the given prompt on exactly these 4 dimensions, each 0-100:
@@ -97,6 +101,43 @@ CRITICAL: Your suggestions must only reference topics, technologies, and concept
 Respond with ONLY valid JSON, no markdown, no explanation:
 {"ownership":N,"depth":N,"critical":N,"clarity":N,"overall":N,"intent":"...","suggestions":["tip1","tip2","tip3"]}`;
 
+// ---------------------------------------------------------------------------
+// Pre-analysis block builder
+// Injects pre-computed heuristic signals into the Ollama prompt so the model
+// can skip re-deriving intent/topics and focus on generating suggestions.
+// ---------------------------------------------------------------------------
+
+function buildPreAnalysis(heuristic: HeuristicContext): string {
+  const weakDims = Object.entries(heuristic.scores)
+    .filter(([k, v]) => k !== 'overall' && v < 60)
+    .sort(([, a], [, b]) => a - b)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+
+  const flagList = heuristic.flags.length > 0 ? heuristic.flags.join(', ') : 'none';
+  const topicList = heuristic.topics.length > 0 ? heuristic.topics.join(', ') : 'unknown';
+
+  const baselineBlock = heuristic.displayedScore
+    ? `- Currently displayed score (your baseline): ownership=${heuristic.displayedScore.ownership}, depth=${heuristic.displayedScore.depth}, critical=${heuristic.displayedScore.critical}, clarity=${heuristic.displayedScore.clarity}, overall=${heuristic.displayedScore.overall}
+- IMPORTANT: Only score a dimension LOWER than its baseline if the prompt has genuinely gotten worse in that area. If the user has added more context or detail, scores should increase from the baseline. This creates a smooth, progressive scoring experience.`
+    : '';
+
+  return `
+Pre-analysis from heuristic scorer (use this to inform your suggestions):
+- Detected intent: ${heuristic.intent}
+- Key topics identified: ${topicList}
+- Heuristic scores: ownership=${heuristic.scores.ownership}, depth=${heuristic.scores.depth}, critical=${heuristic.scores.critical}, clarity=${heuristic.scores.clarity}, overall=${heuristic.scores.overall}
+- Weakest dimensions: ${weakDims || 'none'}
+- Detected signals: ${flagList}
+${baselineBlock}
+Use the key topics and weak dimensions above to write suggestions that are specific to THIS prompt.
+`;
+}
+
+// ---------------------------------------------------------------------------
+// Ollama fetch
+// ---------------------------------------------------------------------------
+
 function clamp(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
@@ -112,35 +153,7 @@ async function fetchOllamaScore(
     console.log('[AskBetter:bg] Fetching from Ollama...');
     const t0 = Date.now();
 
-    // Build a pre-analysis block from heuristic data so Ollama doesn't
-    // waste tokens re-deriving what we already know, and can focus on
-    // generating grounded, specific suggestions.
-    let preAnalysis = '';
-    if (heuristic) {
-      const weakDims = Object.entries(heuristic.scores)
-        .filter(([k, v]) => k !== 'overall' && v < 60)
-        .sort(([, a], [, b]) => a - b)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(', ');
-      const flagList = heuristic.flags.length > 0 ? heuristic.flags.join(', ') : 'none';
-      const topicList = heuristic.topics.length > 0 ? heuristic.topics.join(', ') : 'unknown';
-
-      const baselineBlock = heuristic.displayedScore
-        ? `- Currently displayed score (your baseline): ownership=${heuristic.displayedScore.ownership}, depth=${heuristic.displayedScore.depth}, critical=${heuristic.displayedScore.critical}, clarity=${heuristic.displayedScore.clarity}, overall=${heuristic.displayedScore.overall}
-- IMPORTANT: Only score a dimension LOWER than its baseline if the prompt has genuinely gotten worse in that area. If the user has added more context or detail, scores should increase from the baseline. This creates a smooth, progressive scoring experience.`
-        : '';
-
-      preAnalysis = `
-Pre-analysis from heuristic scorer (use this to inform your suggestions):
-- Detected intent: ${heuristic.intent}
-- Key topics identified: ${topicList}
-- Heuristic scores: ownership=${heuristic.scores.ownership}, depth=${heuristic.scores.depth}, critical=${heuristic.scores.critical}, clarity=${heuristic.scores.clarity}, overall=${heuristic.scores.overall}
-- Weakest dimensions: ${weakDims || 'none'}
-- Detected signals: ${flagList}
-${baselineBlock}
-Use the key topics and weak dimensions above to write suggestions that are specific to THIS prompt.
-`;
-    }
+    const preAnalysis = heuristic ? buildPreAnalysis(heuristic) : '';
 
     const res = await fetch(OLLAMA_URL, {
       method: 'POST',
@@ -218,6 +231,12 @@ Use the key topics and weak dimensions above to write suggestions that are speci
     clearTimeout(timer);
   }
 }
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+let latestScore: LiveScore | null = null;
 
 // ---------------------------------------------------------------------------
 // Message listeners

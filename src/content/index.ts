@@ -15,22 +15,23 @@ import {
 } from './overlay';
 import { scoreWithOllama } from '../analysis/ollama';
 import { extractTopicsTFIDF } from '../analysis/tfidf';
+import type { HeuristicContext } from '../analysis/ollama';
+
+// ---------------------------------------------------------------------------
+// Debounce timers and constants
+// ---------------------------------------------------------------------------
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let ollamaTimer: ReturnType<typeof setTimeout> | null = null;
 let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+
 const DEBOUNCE_MS = 300;
 const PULSE_DELAY_MS = 600; // delay after heuristic before pulse starts
-const OLLAMA_EXTRA_MS = 1200; // additional wait after heuristic fires before hitting Ollama (total = 1500ms from last keystroke)
+const OLLAMA_EXTRA_MS = 1200; // additional wait after heuristic fires (total = 1500 ms from last keystroke)
 
-function safeSendMessage(message: object): void {
-  try {
-    if (!chrome.runtime?.id) return; // context invalidated
-    chrome.runtime.sendMessage(message);
-  } catch {
-    // Extension reloaded while tab was open — nothing to do.
-  }
-}
+// ---------------------------------------------------------------------------
+// Module-level state
+// ---------------------------------------------------------------------------
 
 // Generation counter — incremented once per input change so stale Ollama
 // responses don't overwrite a newer score.
@@ -45,25 +46,30 @@ let lastScoredText = '';
 let lastAiScore: ReturnType<typeof analyzePrompt> | null = null;
 let lastAiText = '';
 
+let activeInput: HTMLElement | null = null;
+let activeObserver: MutationObserver | null = null;
+
 // ---------------------------------------------------------------------------
 // Score blending — interpolates heuristic toward the last AI score based on
 // how much the prompt has changed since the AI scored it.
-// similarity=1 → text unchanged → trust AI fully
-// similarity=0 → text completely different → trust heuristic fully
+//   similarity = 1 → text unchanged → trust AI fully (up to 60% weight)
+//   similarity = 0 → text completely different → trust heuristic fully
 // ---------------------------------------------------------------------------
 
 function textSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   if (!a || !b) return 0;
-  // Character-level overlap ratio (Dice coefficient on bigrams)
+
+  // Dice coefficient on character bigrams
   const bigrams = (s: string) => {
-    const set = new Map<string, number>();
+    const map = new Map<string, number>();
     for (let i = 0; i < s.length - 1; i++) {
       const bg = s.slice(i, i + 2);
-      set.set(bg, (set.get(bg) ?? 0) + 1);
+      map.set(bg, (map.get(bg) ?? 0) + 1);
     }
-    return set;
+    return map;
   };
+
   const aMap = bigrams(a.toLowerCase());
   const bMap = bigrams(b.toLowerCase());
   let intersection = 0;
@@ -75,9 +81,7 @@ function textSimilarity(a: string, b: string): number {
 }
 
 function blendScore(heuristic: number, ai: number, similarity: number): number {
-  // Blend weight: at similarity=1 use 50/50, at similarity=0 use heuristic fully.
-  // This means even identical text gets some heuristic influence (avoids pure lock-in),
-  // but as the prompt diverges the AI score fades out gracefully.
+  // At similarity=1 use up to 60% AI weight; fades to 0% at similarity=0.
   const aiWeight = similarity * 0.6;
   return Math.round(heuristic * (1 - aiWeight) + ai * aiWeight);
 }
@@ -89,9 +93,9 @@ function blendWithAiScore(
   if (!lastAiScore) return heuristic;
 
   const similarity = textSimilarity(currentText, lastAiText);
-  // Below 0.4 similarity the prompt has changed enough that AI score is stale
   if (similarity < 0.4) {
-    lastAiScore = null; // clear so we don't keep blending on very different prompts
+    // Prompt has changed enough that the AI score is stale — clear it
+    lastAiScore = null;
     return heuristic;
   }
 
@@ -105,6 +109,65 @@ function blendWithAiScore(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Soft floor — prevents Ollama from dragging a well-scored prompt down
+// significantly. Caps any drop to 8 points below the currently displayed score.
+// If the AI scores higher, the full AI value is used.
+// ---------------------------------------------------------------------------
+
+function softFloor(ai: number, displayed: number): number {
+  return ai >= displayed ? ai : Math.max(ai, displayed - 8);
+}
+
+// ---------------------------------------------------------------------------
+// Heuristic context builder — packages pre-computed signals for Ollama so it
+// can skip re-deriving intent/topics and focus on generating suggestions.
+// ---------------------------------------------------------------------------
+
+function buildHeuristicContext(
+  text: string,
+  heuristicScore: ReturnType<typeof analyzePrompt>,
+  displayScore: ReturnType<typeof analyzePrompt>
+): HeuristicContext {
+  const topics = extractTopicsTFIDF(text, STOP_WORDS, 3);
+  return {
+    intent: heuristicScore.intent,
+    flags: heuristicScore.flags,
+    scores: {
+      ownership: heuristicScore.ownership,
+      depth: heuristicScore.depth,
+      critical: heuristicScore.critical,
+      clarity: heuristicScore.clarity,
+      overall: heuristicScore.overall,
+    },
+    topics,
+    displayedScore: {
+      ownership: displayScore.ownership,
+      depth: displayScore.depth,
+      critical: displayScore.critical,
+      clarity: displayScore.clarity,
+      overall: displayScore.overall,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Chrome message helper
+// ---------------------------------------------------------------------------
+
+function safeSendMessage(message: object): void {
+  try {
+    if (!chrome.runtime?.id) return; // context invalidated
+    chrome.runtime.sendMessage(message);
+  } catch {
+    // Extension reloaded while tab was open — nothing to do.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core scoring flow
+// ---------------------------------------------------------------------------
+
 function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatform>): void {
   if (debounceTimer) clearTimeout(debounceTimer);
   if (ollamaTimer) clearTimeout(ollamaTimer);
@@ -115,7 +178,6 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
   // for a single keystroke, which would otherwise kill freshly rendered pills.
   const currentText = getInputText(el);
   if (currentText !== lastScoredText) {
-    // Cancel pulse immediately if the user resumes typing
     if (pulseTimer) {
       clearTimeout(pulseTimer);
       pulseTimer = null;
@@ -149,7 +211,7 @@ function onInputChange(el: HTMLElement, platform: ReturnType<typeof detectPlatfo
     renderOverlay(displayScore, el, platform ?? undefined);
     safeSendMessage({ type: 'SCORE_UPDATE', score: displayScore });
 
-    // Bump gen once, here, after the heuristic fires
+    // Bump generation counter after the heuristic fires
     const gen = ++currentOllamaGen;
 
     // Start pulse after a short delay — feels natural, not jarring
@@ -175,66 +237,29 @@ async function scheduleOllamaScore(
 ): Promise<void> {
   console.log('[AskBetter] Ollama scoring started');
 
-  // Build heuristic context to send alongside the raw text — Ollama uses
-  // this to skip re-deriving intent/topics and focus on specific suggestions.
-  const topics = extractTopicsTFIDF(text, STOP_WORDS, 3);
-  const heuristicContext = {
-    intent: heuristicScore.intent,
-    flags: heuristicScore.flags,
-    scores: {
-      ownership: heuristicScore.ownership,
-      depth: heuristicScore.depth,
-      critical: heuristicScore.critical,
-      clarity: heuristicScore.clarity,
-      overall: heuristicScore.overall,
-    },
-    topics,
-    displayedScore: {
-      ownership: displayScore.ownership,
-      depth: displayScore.depth,
-      critical: displayScore.critical,
-      clarity: displayScore.clarity,
-      overall: displayScore.overall,
-    },
-  };
-
+  const heuristicContext = buildHeuristicContext(text, heuristicScore, displayScore);
   const aiScore = await scoreWithOllama(text, heuristicContext);
 
   // Guard 1: generation counter — if the user typed again, discard this result
   if (gen !== currentOllamaGen) return;
 
-  // Guard 2: text match — if the current input no longer matches what we scored,
-  // discard. This catches the case where a slow in-flight response from a previous
-  // prompt arrives after the user has already changed the input.
+  // Guard 2: text match — catches slow in-flight responses from a previous
+  // prompt that arrive after the user has already changed the input.
   if (text !== lastScoredText) return;
 
   // Stop pulsing regardless of whether Ollama succeeded
   setBadgeLoading(false);
 
   if (!aiScore) {
-    console.log(
-      '[AskBetter] Ollama unavailable or returned invalid response — falling back to heuristic suggestions'
-    );
-    // Ollama not running — still show heuristic suggestions so pills aren't empty
+    console.log('[AskBetter] Ollama unavailable — falling back to heuristic suggestions');
     renderFeedback(heuristicScore.suggestions, heuristicScore, el, platform ?? undefined);
     return;
   }
 
-  // Merge AI scores over the heuristic base — flags come from heuristic,
-  // everything else (scores, intent, suggestions) comes from Ollama.
-  // If Ollama returned empty suggestions, fall back to heuristic ones.
-  // Soft-floor: if the AI score is lower than what's currently displayed,
-  // blend toward the display score so the badge never visibly dips when
-  // the user has been steadily improving their prompt.
-  const softFloor = (ai: number, displayed: number): number => {
-    if (ai >= displayed) return ai; // AI is higher — use it directly
-    // AI is lower — cap the drop at 8 points below the displayed score.
-    // This prevents Ollama from dragging a well-scored prompt down significantly
-    // while still allowing small corrections when the AI genuinely disagrees.
-    return Math.max(ai, displayed - 8);
-  };
-
-  const ds = displayScore; // shorthand
+  // Merge AI scores over the heuristic base.
+  // Soft-floor prevents the badge from visibly dipping when the user has been
+  // steadily improving their prompt and Ollama disagrees slightly.
+  const ds = displayScore;
   const merged = {
     ...heuristicScore,
     ...aiScore,
@@ -243,6 +268,7 @@ async function scheduleOllamaScore(
     critical: softFloor(aiScore.critical ?? heuristicScore.critical, ds.critical),
     clarity: softFloor(aiScore.clarity ?? heuristicScore.clarity, ds.clarity),
     overall: softFloor(aiScore.overall ?? heuristicScore.overall, ds.overall),
+    // Fall back to heuristic suggestions if Ollama returned none
     suggestions:
       aiScore.suggestions && aiScore.suggestions.length > 0
         ? aiScore.suggestions
@@ -250,19 +276,21 @@ async function scheduleOllamaScore(
   };
 
   console.log('[AskBetter] Ollama score received:', merged.overall);
+
   // Store AI score so subsequent heuristic renders can blend toward it
   lastAiScore = merged as ReturnType<typeof analyzePrompt>;
   lastAiText = text;
+
   renderOverlay(merged, el, platform ?? undefined);
   renderFeedback(merged.suggestions, merged, el, platform ?? undefined);
   safeSendMessage({ type: 'SCORE_UPDATE', score: merged });
 }
 
-let activeInput: HTMLElement | null = null;
-let activeObserver: MutationObserver | null = null;
+// ---------------------------------------------------------------------------
+// Input attachment
+// ---------------------------------------------------------------------------
 
 function attachToInput(input: HTMLElement, platform: ReturnType<typeof detectPlatform>): void {
-  // Disconnect any previous observer
   if (activeObserver) {
     activeObserver.disconnect();
     activeObserver = null;
@@ -278,20 +306,14 @@ function attachToInput(input: HTMLElement, platform: ReturnType<typeof detectPla
   attachInputBarHover(input, platform ?? undefined);
 
   // MutationObserver for contenteditable changes
-  const observer = new MutationObserver(() => {
-    onInputChange(input, platform);
-  });
+  const observer = new MutationObserver(() => onInputChange(input, platform));
   observer.observe(input, { childList: true, subtree: true, characterData: true });
   activeObserver = observer;
 
   // 'input' event covers direct keyboard input
-  input.addEventListener('input', () => {
-    onInputChange(input, platform);
-  });
+  input.addEventListener('input', () => onInputChange(input, platform));
   // 'keyup' catches deletions in contenteditable that may not fire 'input'
-  input.addEventListener('keyup', () => {
-    onInputChange(input, platform);
-  });
+  input.addEventListener('keyup', () => onInputChange(input, platform));
 
   // Track submitted prompts for the popup/background
   input.addEventListener('keydown', (e: Event) => {
@@ -315,24 +337,25 @@ function attachToInput(input: HTMLElement, platform: ReturnType<typeof detectPla
   }
 }
 
+// ---------------------------------------------------------------------------
+// Initialisation — polls for the input element, re-attaches on SPA navigation
+// ---------------------------------------------------------------------------
+
 function init(): void {
   const platform = detectPlatform();
   if (!platform) return;
 
   console.log(`[AskBetter] Detected platform: ${platform.name}`);
 
-  // Poll until the input element exists, then re-check periodically in case
-  // the SPA replaces the element (e.g. ChatGPT new-chat navigation).
   const pollInterval = setInterval(() => {
     const input = findInputElement(platform);
     if (!input) return;
 
-    // Re-attach if the element is new (first time, or SPA replaced it)
     if (input !== activeInput) {
       clearInterval(pollInterval);
       attachToInput(input, platform);
 
-      // Keep a slower heartbeat to re-attach if the element is ever replaced
+      // Slower heartbeat to re-attach if the SPA replaces the element
       setInterval(() => {
         const current = findInputElement(platform);
         if (current && current !== activeInput) {
@@ -350,8 +373,9 @@ init();
 
 // ---------------------------------------------------------------------------
 // SPA navigation detection — ChatGPT swaps URLs without a page reload.
-// Hide the badge whenever the user navigates to a different chat.
+// Hide the badge and clear AI state whenever the user navigates to a new chat.
 // ---------------------------------------------------------------------------
+
 let lastUrl = location.href;
 const navObserver = new MutationObserver(() => {
   if (location.href !== lastUrl) {
@@ -371,9 +395,9 @@ const navObserver = new MutationObserver(() => {
 navObserver.observe(document.body, { childList: true, subtree: true });
 
 // ---------------------------------------------------------------------------
-// Tab visibility — when the user switches back to this tab, re-score the
-// current input text so the badge reflects any changes made while away.
+// Tab visibility — re-score when the user switches back to this tab
 // ---------------------------------------------------------------------------
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && activeInput) {
     onInputChange(activeInput, detectPlatform());
