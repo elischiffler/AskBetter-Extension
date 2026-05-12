@@ -143,10 +143,10 @@ export function analyzePrompt(text: string): LiveScore {
   }
 
   const intentScores = scoreIntents(trimmed);
-  const intent = primaryIntentFrom(intentScores);
+  const intent = primaryIntentFrom(intentScores, trimmed);
   const flags = detectFlags(trimmed);
   const quality = scorePromptQuality(trimmed, flags, intent);
-  const overall = computeQualityScore(quality);
+  const overall = computeQualityScore(quality, intent);
 
   // Map to UI dimensions
   const ownership = quality.autonomy;

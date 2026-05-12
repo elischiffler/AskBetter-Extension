@@ -70,6 +70,16 @@ Prompt: "how do i build a good breadth first search algorithm? I will be using p
 Expected scores: ownership=42, depth=48, critical=25, clarity=62, overall=44, intent="curiosity"
 Reasoning: Clear question with language/tool context (clarity=62), asks "how" showing curiosity (depth=48), provides tool context but no prior attempt (ownership=42), doesn't ask about tradeoffs or edge cases (critical=25).
 
+Example 4 — high quality structured delegation prompt:
+Prompt: "You are an experienced software engineer and technical writer. I am building a mobile app called FlickIt, which allows users to upload, share, and monetize photos from events and friend groups. Your task is to design a detailed MVP feature breakdown for this app. Please include: Core user features (uploading, feeds, profiles, payments, etc.), Admin or backend features needed to support the system, Suggested database structure at a high level, Key APIs that would be required, Any critical edge cases or risks I should account for in early development. Format your response using clear sections and bullet points. Keep it technical but understandable for a solo developer building the MVP."
+Expected scores: ownership=78, depth=65, critical=82, clarity=80, overall=76, intent="delegation"
+Reasoning: Strong role-setting and detailed context (ownership=78), explicitly requests edge cases and risks (critical=82), clear format and audience constraints (clarity=80), asks for deliverable rather than understanding so depth is moderate (depth=65).
+
+Example 5 — high quality structured delegation with requirements list (no question marks):
+Prompt: "You are a university-level history professor and expert academic writer. I need a comprehensive, well-structured essay on the history of the United States. The essay should cover: A chronological overview of U.S. presidents from George Washington to the present day (highlight major shifts in leadership style and policy), Major wars involving the United States, The outcomes of these wars and their long-term consequences, Key political, economic, and social impacts of each major era. Requirements: Organize the essay chronologically by historical era, Clearly connect events to their political and societal effects, Use formal academic tone but remain readable for an undergraduate audience, Provide a strong introduction and conclusion. Optional: include brief comparisons between different eras."
+Expected scores: ownership=72, depth=60, critical=65, clarity=78, overall=69, intent="delegation"
+Reasoning: Strong role-setting (professor persona) and detailed structured requirements (clarity=78, ownership=72). Explicit audience spec (undergraduate) and format requirements. No prior attempt or reasoning shown (ownership not higher). Doesn't explicitly ask about risks/edge cases (critical=65). Asks for deliverable not understanding (depth=60). Imperative phrasing without question marks is normal for structured delegation — do NOT penalize for lack of question marks when requirements are clearly listed.
+
 Also provide:
 - overall: weighted average (ownership 25%, depth 25%, critical 25%, clarity 25%), rounded to nearest integer
 - intent: one of "delegation" | "curiosity" | "collaborative" | "verification"

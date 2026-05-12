@@ -210,8 +210,10 @@ async function scheduleOllamaScore(
   // the user has been steadily improving their prompt.
   const softFloor = (ai: number, displayed: number): number => {
     if (ai >= displayed) return ai; // AI is higher — use it directly
-    // AI is lower — blend 70% toward displayed to soften the dip
-    return Math.round(ai * 0.3 + displayed * 0.7);
+    // AI is lower — cap the drop at 8 points below the displayed score.
+    // This prevents Ollama from dragging a well-scored prompt down significantly
+    // while still allowing small corrections when the AI genuinely disagrees.
+    return Math.max(ai, displayed - 8);
   };
 
   const ds = displayScore; // shorthand

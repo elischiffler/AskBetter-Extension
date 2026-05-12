@@ -5,10 +5,14 @@ const DELEGATION_SIGNALS = [
   'produce', 'draft', 'code', 'implement', 'design', 'list', 'summarize',
   'translate', 'convert', 'format', 'rewrite', 'edit', 'update', 'add',
   'remove', 'delete', 'find me', 'show me', 'tell me', 'send', 'calculate',
+  // 'explain' is a task verb in delegation contexts ("explain why X occurs",
+  // "explain the reasoning") — more common as a deliverable request than as
+  // a pure curiosity signal, so it lives here instead of CURIOSITY_SIGNALS.
+  'explain', 'analyze', 'identify', 'review', 'suggest', 'provide',
 ];
 
 const CURIOSITY_SIGNALS = [
-  'why', 'how does', 'how do', 'what if', 'explain', 'what would happen',
+  'why', 'how does', 'how do', 'what if', 'what would happen',
   'help me understand', 'what is', "what's", 'how come', 'could you explain',
   'i wonder', 'curious', 'what causes', 'what makes', 'how would',
   'what happens when', 'can you explain', 'walk me through',
@@ -44,7 +48,7 @@ export function scoreIntents(text: string): IntentScores {
   };
 }
 
-export function primaryIntentFrom(scores: IntentScores): PromptIntent {
+export function primaryIntentFrom(scores: IntentScores, text?: string): PromptIntent {
   const order: PromptIntent[] = ['curiosity', 'collaborative', 'verification', 'delegation'];
   let best: PromptIntent = 'delegation';
   let bestScore = -1;
@@ -52,6 +56,15 @@ export function primaryIntentFrom(scores: IntentScores): PromptIntent {
     if (scores[intent] > bestScore) {
       bestScore = scores[intent];
       best = intent;
+    }
+  }
+  // Tie-break: if delegation is within 1 signal of the winner and the prompt
+  // has role-setting ("you are"), it's a task assignment — prefer delegation.
+  if (best !== 'delegation' && text) {
+    const lower = text.toLowerCase();
+    const hasRoleSetting = lower.includes('you are') || lower.includes('act as') || lower.includes('your task') || lower.includes('your role');
+    if (hasRoleSetting && scores.delegation >= bestScore - 1) {
+      best = 'delegation';
     }
   }
   return best;
